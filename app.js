@@ -1,16 +1,26 @@
 (() => {
   const cfg = window.FT_CONFIG || {};
-  const { computeMonths, computeTotals, computeInvestable, parseMoney, MIN_EXPENSE_MONTHS } = window.FTCalc;
+  const { computeMonths, computeTotals, computeInvestable, parseMoney, monthIndex, MIN_EXPENSE_MONTHS } = window.FTCalc;
   const $ = (id) => document.getElementById(id);
 
+  // ---------- formatting ----------
   const cad = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
   const cad0 = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 });
   const fmt = (n) => (n === null || n === undefined ? "n/a" : cad.format(n));
   const fmt0 = (n) => (n === null || n === undefined ? "n/a" : cad0.format(n));
   const pct = (r) => (r === null || r === undefined ? "n/a" : `${Math.round(r * 100)}%`);
+  const compact = (v) => {
+    const a = Math.abs(v);
+    const s = a >= 1e6 ? `${+(a / 1e6).toFixed(1)}M` : a >= 1000 ? `${+(a / 1000).toFixed(a % 1000 ? 1 : 0)}k` : `${Math.round(a)}`;
+    return `${v < 0 ? "−" : ""}$${s}`;
+  };
   const monthLabel = (m, long) => {
     const [y, mo] = m.split("-").map(Number);
     return new Date(y, mo - 1, 1).toLocaleDateString("en-CA", { month: long ? "long" : "short", year: "numeric" });
+  };
+  const monthShort = (m) => {
+    const [y, mo] = m.split("-").map(Number);
+    return new Date(y, mo - 1, 1).toLocaleDateString("en-CA", { month: "short" });
   };
   const thisMonth = () => {
     const d = new Date();
@@ -20,6 +30,8 @@
     get(k) { try { return localStorage.getItem(k); } catch { return null; } },
     set(k, v) { try { localStorage.setItem(k, v); } catch { /* private mode etc. */ } },
   };
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const icon = (name) => `<svg class="i" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 
   // ---------- state ----------
   const DEFAULT_SETTINGS = {
@@ -34,32 +46,47 @@
   let editingId = null;
   let editingBucketId = null;
   let activeTab = "overview";
+  let loaded = false;   // true once we have data (cache or network)
+  let animateNext = true; // entrance + count-up on the next render only
   const charts = {};
 
-  // ---------- theme (per device) ----------
-  const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
-  const isDark = () => {
-    const t = document.documentElement.dataset.theme;
-    return t ? t === "dark" : darkQuery.matches;
-  };
+  // ---------- greeting ----------
+  function paintGreeting() {
+    const h = new Date().getHours();
+    const g = h < 5 ? "Good evening" : h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+    $("greeting").textContent = g;
+    $("login-greeting").textContent = g;
+    $("today").textContent = new Date().toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric" });
+  }
+  paintGreeting();
+
+  // ---------- theme: dark by default, per-device choice ----------
+  const isLight = () => document.documentElement.dataset.theme === "light";
   function paintThemeButton() {
-    $("theme-btn").innerHTML = isDark()
-      ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM11 1h2v3h-2zm0 19h2v3h-2zM3.5 4.9l1.4-1.4 2.1 2.1-1.4 1.4zm13 13 1.4-1.4 2.1 2.1-1.4 1.4zM1 11h3v2H1zm19 0h3v2h-3zM3.5 19.1l2.1-2.1 1.4 1.4-2.1 2.1zm13-13 2.1-2.1 1.4 1.4-2.1 2.1z"/></svg>'
-      : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.5 0-.9-.1-1.4A5.5 5.5 0 0 1 13.4 3.1 9 9 0 0 0 12 3z"/></svg>';
+    const btn = $("theme-btn");
+    btn.innerHTML = icon(isLight() ? "moon" : "sun");
+    btn.setAttribute("aria-label", isLight() ? "Switch to dark mode" : "Switch to light mode");
+    document.querySelector('meta[name="theme-color"]').content = isLight() ? "#f6f6f7" : "#0a0a0a";
   }
   $("theme-btn").addEventListener("click", () => {
-    const next = isDark() ? "light" : "dark";
-    document.documentElement.dataset.theme = next;
-    store.set("ft-theme", next);
+    if (isLight()) delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = "light";
+    store.set("ft-theme", isLight() ? "light" : "dark");
     paintThemeButton();
-    renderCharts();
+    renderCharts(); // Chart.js doesn't follow CSS variables; redraw with the new palette
   });
-  darkQuery.addEventListener("change", () => { paintThemeButton(); renderCharts(); });
   paintThemeButton();
+
+  // Keep the sticky summary strip just under the (variable-height) top bar.
+  const topbar = document.querySelector(".topbar");
+  const syncTopbarHeight = () =>
+    document.documentElement.style.setProperty("--topbar-h", `${topbar.offsetHeight}px`);
+  window.addEventListener("resize", syncTopbarHeight);
 
   // ---------- views ----------
   function show(view) {
     for (const v of ["setup-view", "login-view", "app-view"]) $(v).hidden = v !== view;
+    if (view === "app-view") requestAnimationFrame(syncTopbarHeight);
   }
 
   const configured =
@@ -114,7 +141,10 @@
     user = next;
     if (user) {
       show("app-view");
+      loaded = false;
+      animateNext = true;
       loadFromCache();
+      render();
       setTimeout(refresh, 0); // don't call Supabase inside the auth callback itself
     } else {
       rows = []; buckets = []; settings = { ...DEFAULT_SETTINGS };
@@ -132,8 +162,8 @@
       rows = cached.rows || [];
       buckets = cached.buckets || [];
       settings = { ...DEFAULT_SETTINGS, ...(cached.settings || {}) };
-      setStatus(`Cached ${new Date(cached.at).toLocaleString("en-CA")}`);
-      render();
+      loaded = true;
+      setStatus(`Cached ${new Date(cached.at).toLocaleDateString("en-CA", { month: "short", day: "numeric" })}`, "");
     } catch { /* ignore */ }
   }
 
@@ -141,14 +171,17 @@
     store.set(cacheKey(), JSON.stringify({ at: Date.now(), rows, buckets, settings }));
   }
 
-  function setStatus(text) { $("sync-status").textContent = text; }
+  function setStatus(text, state) {
+    $("sync-status").textContent = text;
+    $("sync-dot").className = `sync-dot ${state || ""}`;
+  }
 
   let refreshing = false;
   let migrationMissing = false;
   async function refresh() {
     if (!user || refreshing) return;
     refreshing = true;
-    setStatus("Syncing…");
+    setStatus("Syncing", "busy");
     const [m, b, s] = await Promise.all([
       sb.from("months").select("*").order("month"),
       sb.from("buckets").select("*").order("created_at"),
@@ -156,7 +189,8 @@
     ]);
     refreshing = false;
     if (m.error) {
-      setStatus(navigator.onLine ? `Sync failed: ${m.error.message}` : "Offline — showing cached data");
+      setStatus(navigator.onLine ? `Sync failed: ${m.error.message}` : "Offline · cached data", "err");
+      loaded = true;
       render();
       return;
     }
@@ -167,14 +201,17 @@
     if (!s.error) settings = { ...DEFAULT_SETTINGS, ...(s.data || {}) };
     saveCache();
     setStatus(migrationMissing
-      ? "Run migration 002 in Supabase to enable buckets & settings"
-      : `Synced ${new Date().toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" })}`);
+      ? "Run migration 002 to enable buckets & settings"
+      : `Synced ${new Date().toLocaleTimeString("en-CA", { hour: "numeric", minute: "2-digit" })}`,
+    migrationMissing ? "err" : "ok");
+    if (!loaded) animateNext = true;
+    loaded = true;
     render();
   }
 
   // Pick up changes made on other devices whenever you come back to the app.
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") refresh();
+    if (document.visibilityState === "visible") { paintGreeting(); refresh(); }
   });
   window.addEventListener("online", refresh);
 
@@ -205,83 +242,198 @@
   const TABS = ["overview", "investable", "cards", "trends"];
   function setTab(tab, push = true) {
     if (!TABS.includes(tab)) tab = "overview";
+    const changed = tab !== activeTab;
     activeTab = tab;
     document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
     store.set("ft-tab", tab);
     if (push && location.hash !== `#${tab}`) history.replaceState(null, "", `#${tab}`);
+    if (changed) animateNext = true;
     render();
     window.scrollTo({ top: 0 });
   }
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => setTab(b.dataset.tab)));
+  document.querySelectorAll("[data-goto]").forEach((el) => {
+    el.tabIndex = 0;
+    el.setAttribute("role", "link");
+    const go = () => setTab(el.dataset.goto);
+    el.addEventListener("click", go);
+    el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+  });
   window.addEventListener("hashchange", () => setTab(location.hash.slice(1), false));
   activeTab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : store.get("ft-tab") || "overview";
   document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === activeTab)));
 
-  // ---------- render ----------
-  function render() {
-    months = computeMonths(rows);
-    const has = months.length > 0;
-    $("empty-state").hidden = has;
-    document.querySelectorAll(".tab-panel").forEach((p) => { p.hidden = !has || p.dataset.panel !== activeTab; });
-    if (!has) return;
-    if (activeTab === "overview") renderOverview();
-    if (activeTab === "investable") renderInvestable();
-    if (activeTab === "cards") renderCards();
-    renderCharts();
+  // ---------- motion helpers ----------
+  // Count a number up from its previous value (or 0) — only on entrance, never on routine syncs.
+  function setNum(id, value, format = fmt, cls) {
+    const el = $(id);
+    el.classList.remove("pos", "neg", "warn");
+    if (cls) el.classList.add(cls);
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      el.textContent = "n/a";
+      el._v = null;
+      return;
+    }
+    const from = el._v ?? 0;
+    el._v = value;
+    cancelAnimationFrame(el._raf);
+    if (!animateNext || reducedMotion.matches || from === value) {
+      el.textContent = format(value);
+      return;
+    }
+    const start = performance.now();
+    const dur = 700;
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / dur);
+      const e = 1 - Math.pow(1 - t, 3);
+      el.textContent = format(from + (value - from) * e);
+      if (t < 1) el._raf = requestAnimationFrame(tick);
+      else el.textContent = format(value);
+    };
+    el._raf = requestAnimationFrame(tick);
   }
 
   function setText(id, text, cls) {
     const el = $(id);
     el.textContent = text;
-    el.classList.remove("good", "bad");
+    el.classList.remove("pos", "neg", "warn");
     if (cls) el.classList.add(cls);
   }
-  const signCls = (n) => (n === null || n === undefined ? "" : n >= 0 ? "good" : "bad");
-  const arrow = (n) => (n > 0 ? "▲" : n < 0 ? "▼" : "•");
+
+  // Staggered fade + slide-up for the cards of the panel that just appeared.
+  function playEntrance(panel) {
+    if (reducedMotion.matches) return;
+    const blocks = panel.querySelectorAll(":scope > .card, :scope > .strip, :scope > .feed > .card");
+    blocks.forEach((el, i) => {
+      el.classList.remove("enter");
+      void el.offsetWidth; // restart the animation
+      el.style.setProperty("--i", i);
+      el.classList.add("enter");
+      el.addEventListener("animationend", () => el.classList.remove("enter"), { once: true });
+    });
+  }
+
+  // ---------- badges & sparklines ----------
+  // Change badge: pill, tinted by whether the move is good, always with an arrow (never color alone).
+  function setBadge(id, cur, prev, { upIsGood = true, mode = "pct" } = {}) {
+    const el = $(id);
+    el.className = "badge";
+    el.removeAttribute("title");
+    if (cur === null || cur === undefined || prev === null || prev === undefined) { el.textContent = ""; return; }
+    let delta;
+    let text;
+    if (mode === "pts") {
+      delta = Math.round((cur - prev) * 100);
+      text = `${Math.abs(delta)} pts`;
+    } else {
+      if (prev === 0) { el.textContent = ""; return; }
+      delta = ((cur - prev) / Math.abs(prev)) * 100;
+      const a = Math.abs(delta);
+      text = `${a >= 100 ? Math.round(a) : a.toFixed(1)}%`;
+    }
+    if (Math.abs(delta) < 0.05) {
+      el.textContent = "0%";
+      return;
+    }
+    const up = delta > 0;
+    el.textContent = `${up ? "↑" : "↓"} ${text}`;
+    el.classList.add(up === upIsGood ? "good" : "bad");
+    el.title = `${up ? "Up" : "Down"} ${text} vs last month`;
+  }
+
+  let sparkSeq = 0;
+  // Tiny inline-SVG trend line with a soft area fill and a dot on the latest point.
+  function sparkline(id, values, color = "var(--text)") {
+    const el = typeof id === "string" ? $(id) : id;
+    const pts = values.map((v, i) => [i, v]).filter(([, v]) => v !== null && v !== undefined && !Number.isNaN(v));
+    if (pts.length < 2) { el.innerHTML = ""; return; }
+    // Size to the space the layout gives us, so it never overlaps its neighbours.
+    const W = Math.max(24, Math.round(el.clientWidth) || (el.classList.contains("lg") ? 120 : 56));
+    const H = Math.max(12, Math.round(el.clientHeight) || (el.classList.contains("lg") ? 44 : 22));
+    const pad = 3;
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const sx = (x) => pad + ((x - x0) / (x1 - x0 || 1)) * (W - pad * 2);
+    const sy = (y) => H - pad - ((y - y0) / (y1 - y0 || 1)) * (H - pad * 2);
+    const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${sx(x).toFixed(1)},${sy(y).toFixed(1)}`).join("");
+    const area = `${line}L${sx(x1).toFixed(1)},${H}L${sx(x0).toFixed(1)},${H}Z`;
+    const [lx, ly] = pts[pts.length - 1];
+    const gid = `sg${++sparkSeq}`;
+    el.innerHTML =
+      `<svg viewBox="0 0 ${W} ${H}" aria-hidden="true">` +
+      `<defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">` +
+      `<stop offset="0" style="stop-color:${color};stop-opacity:.28"/><stop offset="1" style="stop-color:${color};stop-opacity:0"/>` +
+      `</linearGradient></defs>` +
+      `<path d="${area}" fill="url(#${gid})"/>` +
+      `<path d="${line}" fill="none" style="stroke:${color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>` +
+      `<circle cx="${sx(lx).toFixed(1)}" cy="${sy(ly).toFixed(1)}" r="2.5" style="fill:${color}"/></svg>`;
+  }
+
+  // ---------- render ----------
+  function render() {
+    months = computeMonths(rows);
+    const has = months.length > 0;
+    $("loading-state").hidden = loaded || has;
+    $("empty-state").hidden = !loaded || has;
+    let shown = null;
+    document.querySelectorAll(".tab-panel").forEach((p) => {
+      p.hidden = !has || p.dataset.panel !== activeTab;
+      if (!p.hidden) shown = p;
+    });
+    if (!has) return;
+    if (activeTab === "overview") renderOverview();
+    if (activeTab === "investable") renderInvestable();
+    if (activeTab === "cards") renderCards();
+    if (activeTab === "trends") renderTrends();
+    renderCharts();
+    if (animateNext && shown) playEntrance(shown);
+    animateNext = false;
+    requestAnimationFrame(syncTopbarHeight);
+  }
+
+  const series = (key) => months.map((m) => m[key]);
+  const toneOf = (n) => (n === null || n === undefined ? "" : n >= 0 ? "pos" : "neg");
 
   function renderOverview() {
     const cur = months[months.length - 1];
     const prev = months[months.length - 2];
-    $("ov-month").textContent = monthLabel(cur.month, true);
 
-    setText("ov-networth", fmt(cur.netWorth));
+    setNum("ov-networth", cur.netWorth);
+    setBadge("ov-networth-badge", cur.netWorth, prev?.netWorth);
     if (prev) {
       const d = cur.netWorth - prev.netWorth;
-      setText("ov-networth-sub", `${arrow(d)} ${fmt(Math.abs(d))} vs ${monthLabel(prev.month)}`, signCls(d));
-    } else setText("ov-networth-sub", "");
+      $("ov-networth-sub").textContent = `${monthLabel(cur.month, true)} · ${d >= 0 ? "+" : "−"}${fmt0(Math.abs(d))} vs ${monthShort(prev.month)}`;
+    } else $("ov-networth-sub").textContent = monthLabel(cur.month, true);
 
-    setText("ov-income", fmt(cur.income));
-    setText("ov-income-sub", cur.income === null ? "Not entered" : "");
+    setNum("ov-income", cur.income, fmt0);
+    setBadge("ov-income-badge", cur.income, prev?.income);
+    sparkline("ov-income-spark", series("income"), "var(--income)");
 
-    setText("ov-expense", fmt(cur.expense));
-    if (cur.expense === null) {
-      setText("ov-expense-sub", !prev ? "Needs a previous month" : "Needs this month’s income");
-    } else if (cur.expenseChange !== null) {
-      // Spending more is the bad direction, so ▲ is red here.
-      const d = cur.expenseChange;
-      setText("ov-expense-sub", `${arrow(d)} ${fmt0(Math.abs(d))} vs ${monthLabel(prev.month)}`, d > 0 ? "bad" : "good");
-    } else {
-      setText("ov-expense-sub", cur.gapMonths ? `Covers ${cur.gapMonths + 1} months` : "");
-    }
+    setNum("ov-expense", cur.expense, fmt0);
+    setBadge("ov-expense-badge", cur.expense, prev?.expense, { upIsGood: false });
+    sparkline("ov-expense-spark", series("expense"), "var(--expense)");
 
-    setText("ov-savings", fmt(cur.savings), signCls(cur.savings));
-    setText("ov-savings-sub", cur.savings === null ? "Needs a previous month" : "Change in bank − cards");
+    setNum("ov-rate", cur.savingsRate, pct, toneOf(cur.savingsRate));
+    setBadge("ov-rate-badge", cur.savingsRate, prev?.savingsRate, { mode: "pts" });
+    sparkline("ov-rate-spark", series("savingsRate"), "var(--income)");
 
-    setText("ov-rate", pct(cur.savingsRate), signCls(cur.savingsRate));
-    const prevRate = prev?.savingsRate;
-    if (cur.savingsRate !== null && prevRate !== null && prevRate !== undefined) {
-      const d = Math.round((cur.savingsRate - prevRate) * 100);
-      setText("ov-rate-sub", `${arrow(d)} ${Math.abs(d)} pts vs ${monthLabel(prev.month)}`, d >= 0 ? "good" : "bad");
-    } else setText("ov-rate-sub", "Saved ÷ income");
+    setNum("ov-savings", cur.savings, fmt, toneOf(cur.savings));
+    setBadge("ov-savings-badge", cur.savings, prev?.savings);
+    sparkline("ov-savings-spark", series("savings"), cur.savings !== null && cur.savings < 0 ? "var(--expense)" : "var(--income)");
+    $("ov-savings-sub").textContent = cur.savings === null
+      ? "Needs a previous month to compare against"
+      : `Change in bank minus cards since ${monthShort(prev.month)}${cur.gapMonths ? ` (covers ${cur.gapMonths + 1} months)` : ""}`;
 
     const t = computeTotals(months);
-    setText("t-income", fmt(t.totalIncome));
-    setText("t-expense", t.expenseCount ? fmt(t.totalExpense) : "n/a");
-    setText("t-saved", t.savingsCount ? fmt(t.totalSaved) : "n/a", t.savingsCount ? signCls(t.totalSaved) : "");
-    setText("t-avg", fmt(t.avgExpense));
+    setNum("t-income", t.totalIncome, fmt0);
+    setNum("t-expense", t.expenseCount ? t.totalExpense : null, fmt0);
+    setNum("t-saved", t.savingsCount ? t.totalSaved : null, fmt0, t.savingsCount ? toneOf(t.totalSaved) : "");
+    setNum("t-avg", t.avgExpense, fmt0);
     $("totals-note").textContent =
-      `${months.length} month${months.length === 1 ? "" : "s"} tracked. Expense covers ${t.expenseCount}; ` +
-      `the first month has nothing to compare against${months.some((m) => m.income === null) ? ", and months without income are skipped" : ""}.`;
+      `${months.length} month${months.length === 1 ? "" : "s"} tracked · expense covers ${t.expenseCount}` +
+      `${months.some((m) => m.income === null) ? " (months without income are skipped)" : ""}.`;
 
     renderTable();
   }
@@ -292,11 +444,13 @@
     if (cls) el.className = cls;
     return el;
   }
-  function button(label, cls, onClick) {
+  function iconButton(name, label, cls, onClick) {
     const b = document.createElement("button");
     b.type = "button";
-    b.className = `btn sm ${cls}`;
-    b.textContent = label;
+    b.className = `btn icon ${cls || ""}`;
+    b.setAttribute("aria-label", label);
+    b.title = label;
+    b.innerHTML = icon(name);
     b.addEventListener("click", onClick);
     return b;
   }
@@ -315,18 +469,21 @@
       }
       tr.append(
         first,
-        td(fmt(m.income), m.income === null ? "muted" : ""),
+        td(fmt(m.income), m.income === null ? "na" : ""),
         td(fmt(m.cardTotal)),
         td(fmt(m.bankTotal)),
         td(fmt(m.wealthsimple)),
-        td(fmt(m.expense), m.expense === null ? "muted" : ""),
-        td(fmt(m.savings), m.savings === null ? "muted" : signCls(m.savings)),
+        td(fmt(m.expense), m.expense === null ? "na" : ""),
+        td(fmt(m.savings), m.savings === null ? "na" : toneOf(m.savings)),
         td(fmt(m.netWorth)),
       );
       const cell = document.createElement("td");
       const actions = document.createElement("div");
       actions.className = "actions";
-      actions.append(button("Edit", "ghost", () => openForm(m)), button("Delete", "ghost danger", () => deleteMonth(m)));
+      actions.append(
+        iconButton("pencil", `Edit ${monthLabel(m.month)}`, "", () => openForm(m)),
+        iconButton("trash", `Delete ${monthLabel(m.month)}`, "danger", () => deleteMonth(m)),
+      );
       cell.appendChild(actions);
       tr.appendChild(cell);
       tbody.appendChild(tr);
@@ -336,28 +493,37 @@
   // ---------- investable ----------
   function renderInvestable() {
     const inv = computeInvestable(months, settings, buckets);
-    $("inv-month").textContent = `As of ${monthLabel(inv.month, true)}`;
-    setText("inv-hero", fmt(inv.investable), inv.investable < 0 ? "bad" : "");
+    const prevInv = months.length > 1 ? computeInvestable(months.slice(0, -1), settings, buckets) : null;
+
+    setNum("inv-hero", inv.investable, fmt, inv.investable < 0 ? "neg" : "");
+    setBadge("inv-hero-badge", inv.investable, prevInv?.investable);
     const parts = [];
     if (inv.cardReserve) parts.push("cards");
     parts.push(inv.emergency !== null ? "emergency fund" : "emergency fund (not set)");
     if (buckets.length) parts.push(`${buckets.length} bucket${buckets.length === 1 ? "" : "s"}`);
-    setText("inv-hero-sub", inv.investable < 0
-      ? `Short by ${fmt(-inv.investable)} after ${parts.join(", ")}`
-      : `After ${parts.join(", ")}`);
+    $("inv-hero-sub").textContent = inv.investable < 0
+      ? `As of ${monthLabel(inv.month, true)} · short by ${fmt0(-inv.investable)} after ${parts.join(", ")}`
+      : `As of ${monthLabel(inv.month, true)} · after ${parts.join(", ")}`;
+    renderAllocation(inv);
 
-    setText("inv-cash", fmt(inv.cash));
+    setNum("inv-cash", inv.cash, fmt0);
+    setBadge("inv-cash-badge", inv.cash, prevInv?.cash);
+    sparkline("inv-cash-spark", series("bankTotal"), "var(--text)");
     if (inv.runwayDays !== null) {
-      setText("inv-runway", `${inv.runwayDays.toLocaleString("en-CA")} days`);
-      setText("inv-runway-sub", `≈ ${(inv.runwayDays / 30.44).toFixed(1)} months at ${fmt0(inv.avgExpense)}/mo`);
+      setNum("inv-runway", inv.runwayDays, (v) => `${Math.round(v).toLocaleString("en-CA")} days`);
+      $("inv-runway-sub").textContent = `≈ ${(inv.runwayDays / 30.44).toFixed(1)} mo at ${fmt0(inv.avgExpense)}`;
     } else {
-      setText("inv-runway", "n/a");
-      setText("inv-runway-sub", "Needs a month of expense");
+      setNum("inv-runway", null);
+      $("inv-runway-sub").textContent = "needs expense data";
     }
+    if (inv.emergency) {
+      const r = inv.emergencyFunded / inv.emergency;
+      setNum("inv-ef-pct", r, pct, r >= 1 ? "pos" : r < 0.5 ? "warn" : "");
+    } else setNum("inv-ef-pct", null);
 
     $("reserve-cards").checked = !!settings.reserve_cards;
     $("reserve-cards").disabled = migrationMissing;
-    $("reserve-cards-amt").textContent = `(${fmt(inv.cards)})`;
+    $("reserve-cards-amt").textContent = fmt0(inv.cards);
 
     // Emergency fund
     const mode = settings.emergency_mode === "fixed" ? "fixed" : "auto";
@@ -369,36 +535,45 @@
     });
     const showFixed = mode === "fixed" || (!inv.canAuto && inv.emergency === null);
     $("ef-fixed-form").hidden = !showFixed || migrationMissing;
-    if (document.activeElement !== $("ef-fixed")) {
-      $("ef-fixed").value = settings.emergency_fixed ?? "";
-    }
+    if (document.activeElement !== $("ef-fixed")) $("ef-fixed").value = settings.emergency_fixed ?? "";
 
-    const src = { auto: `${inv.multiplier}× avg expense`, fixed: "Fixed amount", none: "Not set" }[inv.emergencySource];
-    $("ef-source").textContent = src;
+    $("ef-source").textContent = { auto: `${inv.multiplier}× avg expense`, fixed: "Fixed amount", none: "Not set" }[inv.emergencySource];
+    const bar = $("ef-bar");
     if (inv.emergency !== null) {
       const ratio = inv.emergency > 0 ? inv.emergencyFunded / inv.emergency : 1;
-      $("ef-funded").textContent = `${fmt0(inv.emergencyFunded)} covered`;
-      $("ef-target").textContent = `of ${fmt0(inv.emergency)} · ${Math.round(ratio * 100)}%`;
-      $("ef-bar").style.width = `${Math.min(100, ratio * 100)}%`;
-      $("ef-bar").className = "progress-fill" + (ratio >= 1 ? " full" : "");
+      setNum("ef-funded", inv.emergencyFunded, fmt0);
+      $("ef-target").textContent = `of ${fmt0(inv.emergency)}`;
+      bar.style.width = `${Math.min(100, ratio * 100)}%`;
+      bar.className = `progress-fill ${ratio >= 1 ? "good" : ratio < 0.5 ? "warn" : ""}`;
     } else {
-      $("ef-funded").textContent = "No target yet";
+      setText("ef-funded", "No target yet");
       $("ef-target").textContent = "";
-      $("ef-bar").style.width = "0";
+      bar.style.width = "0";
     }
-    let note = "";
-    if (!inv.canAuto) {
-      const need = MIN_EXPENSE_MONTHS - inv.expenseCount;
-      note = `Auto-suggest needs ${MIN_EXPENSE_MONTHS} months of derived expense (${need > 0 ? `${need} more` : "positive average"}). Type a target for now.`;
-    } else if (mode === "fixed") {
-      note = `Auto-suggestion would be ${fmt0(inv.autoSuggestion)} (${mult}× your ${fmt0(inv.avgExpense)} average).`;
-    } else {
-      note = `${mult}× your average monthly expense of ${fmt0(inv.avgExpense)}. Updates as you add months.`;
-    }
+    let note;
     if (migrationMissing) note = "Run migrations/002_investable_cards.sql in Supabase to save these settings.";
+    else if (!inv.canAuto) {
+      const need = MIN_EXPENSE_MONTHS - inv.expenseCount;
+      note = `Auto-suggest needs ${MIN_EXPENSE_MONTHS} months of expense (${need > 0 ? `${need} more` : "a positive average"}). Type a target for now.`;
+    } else if (mode === "fixed") note = `Auto-suggestion would be ${fmt0(inv.autoSuggestion)} (${mult}× your ${fmt0(inv.avgExpense)} average).`;
+    else note = `${mult}× your ${fmt0(inv.avgExpense)} average monthly expense. Updates as you add months.`;
     $("ef-note").textContent = note;
 
     renderBuckets(inv);
+  }
+
+  // One horizontal bar: where every dollar of cash is assigned.
+  function renderAllocation(inv) {
+    const segs = [];
+    if (inv.cardReserve) segs.push(["Cards", inv.cardReserve, "color-mix(in srgb, var(--text) 18%, transparent)"]);
+    if (inv.emergency) segs.push(["Emergency", inv.emergency, "color-mix(in srgb, var(--text) 55%, transparent)"]);
+    if (inv.bucketTotal) segs.push(["Buckets", inv.bucketTotal, "color-mix(in srgb, var(--text) 32%, transparent)"]);
+    if (inv.investable > 0) segs.push(["Investable", inv.investable, "var(--income)"]);
+    else if (inv.investable < 0) segs.push(["Short", -inv.investable, "var(--expense)"]);
+    $("inv-alloc").innerHTML = segs.map(([, v, c]) => `<span style="flex-grow:${v};background:${c}"></span>`).join("");
+    $("inv-alloc-legend").innerHTML = segs
+      .map(([k, v, c]) => `<span class="key" style="--c:${c}"><i class="swatch" style="background:${c}"></i>${k}<b>${fmt0(v)}</b></span>`)
+      .join("");
   }
 
   $("reserve-cards").addEventListener("change", (e) => saveSettings({ reserve_cards: e.target.checked }));
@@ -433,40 +608,51 @@
     list.replaceChildren();
     $("bucket-total").textContent = buckets.length ? `${fmt0(inv.bucketTotal)} total` : "";
     for (const b of inv.buckets) {
-      const li = document.createElement("li");
-      li.className = "bucket-item";
       const ratio = b.target > 0 ? b.funded / b.target : 1;
+      const li = document.createElement("li");
+      li.className = "item";
+
       const top = document.createElement("div");
       top.className = "item-top";
       const name = document.createElement("span");
       name.className = "item-name";
-      name.textContent = b.name;
+      const nm = document.createElement("span");
+      nm.textContent = b.name;
+      name.appendChild(nm);
+      const actions = document.createElement("div");
+      actions.className = "item-actions";
+      actions.append(
+        iconButton("pencil", `Edit ${b.name}`, "", () => editBucket(b)),
+        iconButton("trash", `Delete ${b.name}`, "danger", () => deleteBucket(b)),
+      );
+      top.append(name, actions);
+
+      const mid = document.createElement("div");
+      mid.className = "item-mid";
       const amt = document.createElement("span");
-      amt.textContent = `${fmt0(b.funded)} / ${fmt0(b.target)}`;
-      top.append(name, amt);
+      amt.className = "item-amt num";
+      amt.innerHTML = `${fmt0(b.funded)} <span class="faint">/ ${fmt0(b.target)}</span>`;
+      const meta = document.createElement("span");
+      meta.className = "item-meta";
+      if (b.deadline) {
+        const left = monthIndex(b.deadline) - monthIndex(thisMonth());
+        meta.innerHTML = `${icon("calendar")}<span></span>`;
+        meta.querySelector(".i").style.cssText = "width:14px;height:14px";
+        meta.lastChild.textContent = `${monthShort(b.deadline)} ${b.deadline.slice(0, 4)} · ${left >= 0 ? `${left} mo left` : "past due"}`;
+        if (left < 0 && ratio < 1) meta.classList.add("warn");
+      }
+      mid.append(amt, meta);
 
       const bar = document.createElement("div");
       bar.className = "progress";
       const fill = document.createElement("div");
-      fill.className = "progress-fill" + (ratio >= 1 ? " full" : "");
+      fill.className = `progress-fill ${ratio >= 1 ? "good" : ""}`;
       fill.style.width = `${Math.min(100, ratio * 100)}%`;
       bar.appendChild(fill);
+      bar.setAttribute("role", "img");
+      bar.setAttribute("aria-label", `${Math.round(ratio * 100)}% covered by cash`);
 
-      const meta = document.createElement("div");
-      meta.className = "item-meta";
-      meta.style.marginTop = "8px";
-      const bits = [];
-      if (b.deadline) {
-        const monthsLeft = window.FTCalc.monthIndex(b.deadline) - window.FTCalc.monthIndex(thisMonth());
-        bits.push(`By ${monthLabel(b.deadline)}${monthsLeft >= 0 ? ` · ${monthsLeft} mo left` : " · past due"}`);
-      }
-      bits.push(ratio >= 1 ? "Fully covered by cash" : `${Math.round(ratio * 100)}% covered by cash`);
-      meta.textContent = bits.join(" · ");
-
-      const actions = document.createElement("div");
-      actions.className = "item-actions";
-      actions.append(button("Edit", "ghost", () => editBucket(b)), button("Delete", "ghost danger", () => deleteBucket(b)));
-      li.append(top, bar, meta, actions);
+      li.append(top, mid, bar);
       list.appendChild(li);
     }
   }
@@ -476,7 +662,7 @@
     $("b-name").value = b.name;
     $("b-target").value = b.target;
     $("b-deadline").value = b.deadline || "";
-    $("b-save").textContent = "Save";
+    $("b-save").textContent = "Save bucket";
     $("b-cancel").hidden = false;
     $("b-name").focus();
   }
@@ -528,78 +714,97 @@
     for (const m of months) for (const c of m.cards || []) if (!names.includes(c.name)) names.push(c.name);
     return names;
   }
-  const seriesColor = (i) => css(`--s${(i % 8) + 1}`);
+  // Monochrome shades per card (colour is reserved for data meaning); fixed by first appearance.
+  const SHADES = [92, 58, 36, 22, 14, 8];
+  const cardShade = (i) => `color-mix(in srgb, var(--text) ${SHADES[i % SHADES.length]}%, transparent)`;
+  const cardBalance = (m, name) => {
+    const c = (m.cards || []).find((x) => x.name === name);
+    return c ? Number(c.balance) : null;
+  };
 
   function renderCards() {
     const cur = months[months.length - 1];
     const prev = months[months.length - 2];
     const limits = settings.card_limits || {};
     const names = cardNames();
-    $("cd-month").textContent = monthLabel(cur.month, true);
 
-    setText("cd-total", fmt(cur.cardTotal));
+    setNum("cd-total", cur.cardTotal);
+    setBadge("cd-total-badge", cur.cardTotal, prev?.cardTotal, { upIsGood: false });
     if (prev) {
       const d = cur.cardTotal - prev.cardTotal;
-      setText("cd-total-sub", `${arrow(d)} ${fmt0(Math.abs(d))} vs ${monthLabel(prev.month)}`, d > 0 ? "bad" : "good");
-    } else setText("cd-total-sub", "");
+      $("cd-total-sub").textContent = `${monthLabel(cur.month, true)} · ${d > 0 ? "+" : d < 0 ? "−" : ""}${fmt0(Math.abs(d))} vs ${monthShort(prev.month)}`;
+    } else $("cd-total-sub").textContent = monthLabel(cur.month, true);
+    $("cd-legend").innerHTML = names
+      .map((n, i) => `<span class="key"><i class="swatch" style="background:${cardShade(i)}"></i><span></span></span>`)
+      .join("");
+    $("cd-legend").querySelectorAll(".key > span").forEach((s, i) => { s.textContent = names[i]; });
 
     const limited = cur.cards.filter((c) => Number(limits[c.name]) > 0);
     if (limited.length) {
-      const bal = limited.reduce((t, c) => t + Number(c.balance), 0);
+      const bal = limited.reduce((t, c) => t + Math.max(0, Number(c.balance)), 0);
       const lim = limited.reduce((t, c) => t + Number(limits[c.name]), 0);
-      setText("cd-util", pct(bal / lim), bal / lim > 0.3 ? "bad" : "");
-      setText("cd-util-sub", `${fmt0(bal)} of ${fmt0(lim)} limit${limited.length < cur.cards.length ? ` · ${limited.length} of ${cur.cards.length} cards` : ""}`);
+      setNum("cd-util", bal / lim, pct, bal / lim > 0.3 ? "warn" : "");
+      $("cd-util-sub").textContent = `of ${compact(lim)} limit`;
     } else {
       setText("cd-util", "—");
-      setText("cd-util-sub", "Add limits below");
+      $("cd-util-sub").textContent = "add limits below";
     }
+    const top = [...cur.cards].sort((a, b) => Number(b.balance) - Number(a.balance))[0];
+    if (top) {
+      setNum("cd-top", Number(top.balance), fmt0);
+      $("cd-top-sub").textContent = top.name;
+    } else { setNum("cd-top", null); $("cd-top-sub").textContent = ""; }
+    setText("cd-count", String(cur.cards.length));
+    $("cd-month").textContent = monthShort(cur.month) + " " + cur.month.slice(0, 4);
 
     const list = $("card-list");
     list.replaceChildren();
-    for (const c of cur.cards) {
+    cur.cards.forEach((c) => {
       const i = names.indexOf(c.name);
-      const before = prev?.cards.find((x) => x.name === c.name);
+      const balance = Number(c.balance);
+      const before = prev ? cardBalance(prev, c.name) : null;
       const li = document.createElement("li");
-      li.className = "card-item";
+      li.className = "item";
 
-      const top = document.createElement("div");
-      top.className = "item-top";
+      const topRow = document.createElement("div");
+      topRow.className = "item-top";
       const name = document.createElement("span");
       name.className = "item-name";
-      const sw = document.createElement("span");
-      sw.className = "swatch";
-      sw.style.background = seriesColor(i);
-      name.append(sw, c.name);
+      name.innerHTML = `<i class="swatch" style="background:${cardShade(i)}"></i><span></span>`;
+      name.lastChild.textContent = c.name;
       const amt = document.createElement("span");
-      amt.style.fontWeight = "650";
-      amt.textContent = fmt(Number(c.balance));
-      top.append(name, amt);
-      li.appendChild(top);
+      amt.className = "item-amt num";
+      amt.textContent = fmt(balance);
+      topRow.append(name, amt);
 
-      const meta = document.createElement("div");
-      meta.className = "item-meta";
-      if (before) {
-        const d = Number(c.balance) - Number(before.balance);
-        meta.textContent = `${arrow(d)} ${fmt0(Math.abs(d))} vs ${monthLabel(prev.month)}`;
-        if (d > 0) meta.classList.add("bad");
-        else if (d < 0) meta.classList.add("good");
-      } else meta.textContent = "New this month";
-      li.appendChild(meta);
+      const mid = document.createElement("div");
+      mid.className = "item-mid";
+      const badge = document.createElement("span");
+      badge.id = `cd-badge-${i}`;
+      mid.appendChild(badge);
+      const spark = document.createElement("span");
+      spark.className = "spark";
+      mid.appendChild(spark);
+      li.append(topRow, mid);
+      list.appendChild(li);
+      if (before !== null) setBadge(badge.id, balance, before, { upIsGood: false });
+      else { badge.className = "caption"; badge.textContent = "New this month"; }
+      sparkline(spark, months.map((m) => cardBalance(m, c.name)), "var(--text-muted)");
 
       const limit = Number(limits[c.name]) || 0;
       if (limit > 0) {
-        const ratio = Math.max(0, Number(c.balance)) / limit;
+        const ratio = Math.max(0, balance) / limit;
         const bar = document.createElement("div");
         bar.className = "progress";
-        bar.style.marginTop = "10px";
         const fill = document.createElement("div");
-        fill.className = "progress-fill" + (ratio > 0.3 ? " over" : "");
+        fill.className = `progress-fill ${ratio > 0.7 ? "bad" : ratio > 0.3 ? "warn" : ""}`;
         fill.style.width = `${Math.min(100, ratio * 100)}%`;
         bar.appendChild(fill);
         const u = document.createElement("div");
         u.className = "item-meta";
-        u.style.marginTop = "6px";
-        u.textContent = `${pct(ratio)} utilization${ratio > 0.3 ? " · above 30%" : ""}`;
+        u.style.marginTop = "8px";
+        u.textContent = `${pct(ratio)} of ${fmt0(limit)} limit${ratio > 0.3 ? " · above 30%" : ""}`;
+        if (ratio > 0.3) u.classList.add("warn");
         li.append(bar, u);
       }
 
@@ -609,20 +814,24 @@
       const inputId = `limit-${i}`;
       lbl.htmlFor = inputId;
       lbl.textContent = "Credit limit";
+      const field = document.createElement("span");
+      field.className = "money-field";
+      field.innerHTML = "<span>$</span>";
       const input = document.createElement("input");
       input.type = "text";
       input.id = inputId;
       input.inputMode = "decimal";
       input.className = "money";
       input.placeholder = "Optional";
+      input.autocomplete = "off";
       input.value = limit > 0 ? limit : "";
       input.disabled = migrationMissing;
       input.addEventListener("change", () => saveLimit(c.name, input));
       input.addEventListener("keydown", (e) => { if (e.key === "Enter") input.blur(); });
-      row.append(lbl, input);
+      field.appendChild(input);
+      row.append(lbl, field);
       li.appendChild(row);
-      list.appendChild(li);
-    }
+    });
   }
 
   async function saveLimit(name, input) {
@@ -641,51 +850,195 @@
     await saveSettings({ card_limits: limits });
   }
 
-  // ---------- charts (Chart.js) ----------
-  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // ---------- trends ----------
+  function renderTrends() {
+    const first = months[0];
+    const cur = months[months.length - 1];
+    if (months.length > 1) {
+      const d = cur.netWorth - first.netWorth;
+      $("tr-label").textContent = "Net worth growth";
+      setNum("tr-change", d, (v) => `${v >= 0 ? "+" : "−"}${cad.format(Math.abs(v))}`, toneOf(d));
+      setBadge("tr-badge", cur.netWorth, first.netWorth);
+      $("tr-sub").textContent = `Since ${monthLabel(first.month, true)} · now ${fmt0(cur.netWorth)}`;
+    } else {
+      $("tr-label").textContent = "Net worth";
+      setNum("tr-change", cur.netWorth);
+      setBadge("tr-badge", null, null);
+      $("tr-sub").textContent = "Growth appears once you add a second month";
+    }
+    $("avg3-note").textContent = months.some((m) => m.expenseAvg3 !== null)
+      ? "Dotted: 3-month rolling average"
+      : "Dotted 3-month average appears after 3 months of expense in a row";
+  }
 
-  function baseOptions({ percent = false, legend = true } = {}) {
-    const text = css("--muted");
-    const val = (v) => (v === null || v === undefined ? "n/a" : percent ? `${Math.round(v * 100)}%` : cad.format(v));
+  // ---------- charts (Chart.js, one visual language everywhere) ----------
+  const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // Resolve any CSS color (incl. color-mix / var) to something canvas understands.
+  const probe = document.createElement("span");
+  probe.style.display = "none";
+  document.body.appendChild(probe);
+  const resolve = (color) => { probe.style.color = color; return getComputedStyle(probe).color; };
+  const alpha = (color, a) => {
+    const m = resolve(color).match(/rgba?\(([^)]+)\)/);
+    if (!m) return color;
+    const [r, g, b] = m[1].split(/[\s,/]+/).map(Number);
+    return `rgba(${r}, ${g}, ${b}, ${a})`;
+  };
+  const palette = () => ({
+    text: cssVar("--text"), muted: cssVar("--text-muted"), faint: cssVar("--text-faint"),
+    border: cssVar("--border"), surface2: cssVar("--surface-2"),
+    income: cssVar("--income"), expense: cssVar("--expense"), warning: cssVar("--warning"),
+  });
+
+  // Direct label at the end of a line (dataset.endLabel = true).
+  const endLabelPlugin = {
+    id: "endLabel",
+    afterDatasetsDraw(chart) {
+      const { ctx } = chart;
+      chart.data.datasets.forEach((ds, di) => {
+        if (!ds.endLabel || chart.getDatasetMeta(di).hidden) return;
+        const pts = chart.getDatasetMeta(di).data;
+        let k = ds.data.length - 1;
+        while (k >= 0 && (ds.data[k] === null || ds.data[k] === undefined)) k--;
+        if (k < 0) return;
+        const p = pts[k];
+        ctx.save();
+        ctx.font = `600 11px ${cssVar("--font-ui")}`;
+        ctx.fillStyle = ds.endLabelColor || ds.borderColor;
+        ctx.textAlign = "right";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(ds.endLabel === true ? ds.label : ds.endLabel, p.x - 8, p.y - 10);
+        ctx.restore();
+      });
+    },
+  };
+  // Value labels above bars (options.plugins.barValues.enabled).
+  const barValuesPlugin = {
+    id: "barValues",
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.enabled) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = `700 11px ${cssVar("--font-num")}`;
+      ctx.fillStyle = cssVar("--text-muted");
+      ctx.textAlign = "center";
+      chart.getDatasetMeta(0).data.forEach((bar, i) => {
+        const label = opts.labels[i];
+        if (!label) return;
+        const top = Math.min(bar.y, bar.base);
+        ctx.textBaseline = "bottom";
+        ctx.fillText(label, bar.x, top - 6);
+      });
+      ctx.restore();
+    },
+  };
+  if (window.Chart) {
+    Chart.register(endLabelPlugin, barValuesPlugin);
+  }
+
+  function baseOptions({ percent = false, yAxis = true, xAxis = true } = {}) {
+    const c = palette();
+    Chart.defaults.font.family = cssVar("--font-ui");
+    Chart.defaults.color = c.faint;
+    const val = (v) => (v === null || v === undefined ? "n/a" : percent ? `${Math.round(v * 100)}%` : cad0.format(v));
     return {
       responsive: true,
       maintainAspectRatio: false,
-      animation: false, // charts redraw on every sync; animating each time looks jumpy
+      animation: animateNext && !reducedMotion.matches ? { duration: 500, easing: "easeOutCubic" } : false,
+      animations: { x: { duration: 0 } },            // grow upward only; points never slide sideways
+      transitions: { resize: { animation: { duration: 0 } } },
       interaction: { mode: "index", intersect: false },
+      layout: { padding: { top: 18, right: 4 } },
       plugins: {
-        legend: {
-          display: legend,
-          position: "bottom",
-          labels: { color: css("--text-2"), boxWidth: 10, boxHeight: 10, useBorderRadius: true, borderRadius: 3, padding: 14 },
-        },
+        legend: { display: false },
         tooltip: {
-          backgroundColor: css("--surface"),
-          titleColor: css("--text"),
-          bodyColor: css("--text-2"),
-          borderColor: css("--grid"),
+          backgroundColor: c.surface2,
+          borderColor: c.border,
           borderWidth: 1,
-          padding: 10,
-          boxPadding: 4,
-          callbacks: { label: (c) => ` ${c.dataset.label}: ${val(Array.isArray(c.raw) ? c.raw[1] - c.raw[0] : c.raw)}` },
+          titleColor: c.muted,
+          titleFont: { family: cssVar("--font-ui"), size: 12, weight: "500" },
+          bodyColor: c.text,
+          bodyFont: { family: cssVar("--font-num"), size: 13, weight: "700" },
+          padding: 12,
+          cornerRadius: 12,
+          boxWidth: 8, boxHeight: 8, boxPadding: 6, usePointStyle: true,
+          filter: (item) => !item.dataset.isRef || item.raw !== null,
+          callbacks: {
+            label: (ctx) => ` ${ctx.dataset.label}  ${val(Array.isArray(ctx.raw) ? ctx.raw[1] - ctx.raw[0] : ctx.raw)}`,
+          },
         },
       },
       scales: {
-        x: { ticks: { color: text, maxRotation: 0, autoSkipPadding: 12 }, grid: { display: false }, border: { color: css("--grid") } },
-        y: {
-          ticks: { color: text, maxTicksLimit: 6, callback: (v) => (percent ? `${Math.round(v * 100)}%` : cad0.format(v)) },
-          grid: { color: css("--grid") },
+        x: {
+          display: xAxis,
+          ticks: { color: c.faint, font: { size: 11 }, maxRotation: 0, autoSkipPadding: 16 },
+          grid: { display: false },
           border: { display: false },
+        },
+        y: {
+          display: yAxis,
+          position: "right",
+          ticks: {
+            color: c.faint, font: { family: cssVar("--font-num"), size: 10, weight: "500" }, maxTicksLimit: 4, padding: 8,
+            callback: (v) => (percent ? `${Math.round(v * 100)}%` : compact(v)),
+          },
+          grid: { color: c.border, drawTicks: false },
+          border: { display: false, dash: [2, 4] },
         },
       },
     };
   }
-  const line = (label, data, color, extra = {}) => ({
-    label, data, borderColor: color, backgroundColor: color,
-    borderWidth: 2, tension: 0.3, pointRadius: 3, pointHoverRadius: 5, spanGaps: false, ...extra,
-  });
-  const bar = (label, data, color, extra = {}) => ({
-    label, data, backgroundColor: color, borderRadius: 4, borderSkipped: "start", maxBarThickness: 36, ...extra,
-  });
+
+  // Smooth line + gradient area; the latest point gets a filled dot with a halo ring.
+  function areaLine(label, data, color, extra = {}) {
+    let last = data.length - 1;
+    while (last >= 0 && (data[last] === null || data[last] === undefined)) last--;
+    const solid = resolve(color);
+    return {
+      label, data,
+      borderColor: solid,
+      borderWidth: 2,
+      tension: 0.35,
+      cubicInterpolationMode: "monotone",
+      spanGaps: true,
+      fill: "start",
+      backgroundColor: (ctx) => {
+        const area = ctx.chart.chartArea;
+        if (!area) return "transparent";
+        const g = ctx.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+        g.addColorStop(0, alpha(solid, 0.22));
+        g.addColorStop(1, alpha(solid, 0));
+        return g;
+      },
+      pointRadius: (ctx) => (ctx.dataIndex === last ? 4 : 0),
+      pointBackgroundColor: solid,
+      pointBorderColor: alpha(solid, 0.25),
+      pointBorderWidth: (ctx) => (ctx.dataIndex === last ? 8 : 0),
+      pointHoverRadius: 5,
+      pointHoverBorderWidth: 6,
+      pointHoverBorderColor: alpha(solid, 0.25),
+      pointStyle: "circle",
+      order: 1,
+      ...extra,
+    };
+  }
+  // Dotted muted reference line, drawn behind the actual line.
+  function refLine(label, data) {
+    const c = palette();
+    return {
+      label, data, isRef: true,
+      borderColor: c.muted,
+      borderWidth: 1.5,
+      borderDash: [2, 4],
+      tension: 0.35,
+      cubicInterpolationMode: "monotone",
+      fill: false,
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      spanGaps: true,
+      order: 2,
+    };
+  }
 
   function drawChart(id, config) {
     if (!window.Chart) return;
@@ -694,26 +1047,47 @@
   }
 
   function renderCharts() {
-    if (!months.length || !user) return;
-    const labels = months.map((m) => monthLabel(m.month));
+    if (!months.length || !user || !window.Chart) return;
+    const c = palette();
+    const labels = months.map((m) => monthShort(m.month) + (months.length > 12 || m.month.endsWith("-01") ? ` ${m.month.slice(2, 4)}` : ""));
+    const t = computeTotals(months);
 
     if (activeTab === "overview") {
+      const heroOpts = baseOptions({ yAxis: false });
+      heroOpts.layout.padding = { top: 12, left: 8, right: 8 };
+      drawChart("chart-hero-worth", {
+        type: "line",
+        data: { labels, datasets: [areaLine("Net worth", series("netWorth"), c.text)] },
+        options: heroOpts,
+      });
+
+      const flowOpts = baseOptions();
       drawChart("chart-flow", {
         type: "bar",
         data: {
           labels,
           datasets: [
-            bar("Income", months.map((m) => m.income), css("--s1")),
-            bar("Expense", months.map((m) => m.expense), css("--s2")),
+            {
+              type: "line", ...refLine("Avg expense", months.map(() => t.avgExpense)),
+              order: 0,
+            },
+            {
+              label: "Income", data: series("income"), backgroundColor: c.income,
+              borderRadius: 6, borderSkipped: "start", categoryPercentage: 0.62, barPercentage: 0.82, maxBarThickness: 18, order: 1,
+            },
+            {
+              label: "Expense", data: series("expense"), backgroundColor: c.expense,
+              borderRadius: 6, borderSkipped: "start", categoryPercentage: 0.62, barPercentage: 0.82, maxBarThickness: 18, order: 1,
+            },
           ],
         },
-        options: baseOptions(),
+        options: flowOpts,
       });
     }
 
     if (activeTab === "investable") {
       const inv = computeInvestable(months, settings, buckets);
-      const steps = [["Total cash", inv.cash, "total"]];
+      const steps = [["Cash", inv.cash, "total"]];
       if (inv.cardReserve) steps.push(["Cards", -inv.cardReserve, "minus"]);
       steps.push(["Emergency", -(inv.emergency || 0), "minus"]);
       if (buckets.length) steps.push(["Buckets", -inv.bucketTotal, "minus"]);
@@ -726,73 +1100,90 @@
         return [level, from];
       });
       const colors = steps.map(([, v, kind], i) =>
-        kind === "minus" ? css("--neutral") : i === steps.length - 1 ? (v < 0 ? css("--bad") : css("--s3")) : css("--s1"));
-      const opts = baseOptions({ legend: false });
-      opts.plugins.tooltip.callbacks.label = (c) => {
-        const [, v, kind] = steps[c.dataIndex];
-        return ` ${kind === "minus" ? "− " + cad.format(-v) : cad.format(v)}`;
-      };
+        i === steps.length - 1 ? (v < 0 ? c.expense : c.income) : kind === "minus" ? alpha(c.text, 0.18) : alpha(c.text, 0.85));
+      const opts = baseOptions();
       opts.interaction = { mode: "nearest", intersect: true };
       opts.scales.x.ticks.autoSkip = false;
+      opts.scales.x.ticks.font = { size: 10 };
+      opts.plugins.tooltip.callbacks.label = (ctx) => {
+        const [, v, kind] = steps[ctx.dataIndex];
+        return ` ${kind === "minus" ? "− " + cad0.format(-v) : cad0.format(v)}`;
+      };
+      opts.plugins.barValues = { enabled: true, labels: steps.map(([, v, kind]) => (kind === "minus" ? `−${compact(-v)}` : compact(v))) };
       drawChart("chart-waterfall", {
         type: "bar",
-        data: { labels: steps.map((s) => s[0]), datasets: [bar("Amount", data, colors, { borderSkipped: false, maxBarThickness: 56 })] },
+        data: {
+          labels: steps.map((s) => s[0]),
+          datasets: [{ label: "Amount", data, backgroundColor: colors, borderRadius: 6, borderSkipped: false, maxBarThickness: 48 }],
+        },
         options: opts,
       });
     }
 
     if (activeTab === "cards") {
       const names = cardNames();
+      const opts = baseOptions();
+      opts.scales.x.stacked = true;
+      opts.scales.y.stacked = true;
+      opts.plugins.tooltip.callbacks.footer = (items) => `Total  ${cad0.format(items.reduce((s, it) => s + (it.raw || 0), 0))}`;
+      opts.plugins.tooltip.footerFont = { family: cssVar("--font-num"), size: 12, weight: "700" };
+      opts.plugins.tooltip.footerColor = c.muted;
       drawChart("chart-cards", {
-        type: "line",
+        type: "bar",
         data: {
           labels,
-          datasets: names.map((name, i) => line(name, months.map((m) => {
-            const c = (m.cards || []).find((x) => x.name === name);
-            return c ? Number(c.balance) : null;
-          }), seriesColor(i))),
+          datasets: names.map((name, i) => ({
+            label: name,
+            data: months.map((m) => cardBalance(m, name)),
+            backgroundColor: resolve(cardShade(i)),
+            borderColor: resolve(cssVar("--surface")),
+            borderWidth: { top: 2 },
+            borderSkipped: "start",
+            borderRadius: i === names.length - 1 ? { topLeft: 6, topRight: 6 } : 0,
+            maxBarThickness: 28,
+          })),
         },
-        options: baseOptions(),
+        options: opts,
       });
     }
 
     if (activeTab === "trends") {
       drawChart("chart-worth", {
         type: "line",
+        data: { labels, datasets: [areaLine("Net worth", series("netWorth"), c.text)] },
+        options: baseOptions(),
+      });
+
+      const rates = series("savingsRate");
+      const known = rates.filter((r) => r !== null);
+      const avgRate = known.length ? known.reduce((a, b) => a + b, 0) / known.length : null;
+      drawChart("chart-rate", {
+        type: "line",
         data: {
           labels,
           datasets: [
-            line("Net worth", months.map((m) => m.netWorth), css("--s1"), { fill: false }),
-            line("Wealthsimple", months.map((m) => m.wealthsimple), css("--s2")),
+            areaLine("Savings rate", rates, c.income),
+            refLine("Average", months.map(() => avgRate)),
+          ],
+        },
+        options: baseOptions({ percent: true }),
+      });
+
+      drawChart("chart-spend", {
+        type: "line",
+        data: {
+          labels,
+          datasets: [
+            areaLine("Expense", series("expense"), c.expense),
+            refLine("3-mo average", series("expenseAvg3")),
           ],
         },
         options: baseOptions(),
       });
 
-      const rateOpts = baseOptions({ percent: true, legend: false });
-      drawChart("chart-rate", {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [bar("Savings rate", months.map((m) => m.savingsRate),
-            months.map((m) => (m.savingsRate !== null && m.savingsRate < 0 ? css("--bad") : css("--s3"))))],
-        },
-        options: rateOpts,
-      });
-
-      const hasAvg = months.some((m) => m.expenseAvg3 !== null);
-      $("avg3-note").textContent = hasAvg
-        ? "The line smooths out one-off months: each point averages that month and the two before it."
-        : "The 3-month average appears once you have 3 months of expense in a row.";
-      drawChart("chart-avg", {
-        type: "bar",
-        data: {
-          labels,
-          datasets: [
-            { ...line("3-month average", months.map((m) => m.expenseAvg3), css("--s1")), type: "line", order: 0 },
-            bar("Expense", months.map((m) => m.expense), css("--s2"), { order: 1 }),
-          ],
-        },
+      drawChart("chart-ws", {
+        type: "line",
+        data: { labels, datasets: [areaLine("Wealthsimple", series("wealthsimple"), c.muted)] },
         options: baseOptions(),
       });
     }
@@ -818,7 +1209,8 @@
 
   function openForm(entry = null) {
     editingId = entry?.id || null;
-    $("entry-title").textContent = entry ? `Edit ${monthLabel(entry.month)}` : "Add month";
+    $("entry-title").textContent = entry ? `Edit ${monthLabel(entry.month, true)}` : "Add month";
+    $("entry-kicker").textContent = entry ? "Update balances" : "Monthly check-in";
     $("entry-msg").textContent = "";
     $("f-cards").replaceChildren();
     $("f-banks").replaceChildren();
@@ -910,17 +1302,32 @@
     return { entry: { month, income, cards, banks, wealthsimple: ws } };
   }
 
-  // Live "what this month will look like" line under the form.
+  // Live preview of what this month will compute to.
   function updatePreview() {
     const r = readForm();
     document.querySelectorAll("#entry-form .invalid").forEach((el) => el.classList.remove("invalid"));
     const el = $("entry-preview");
-    if (r.error) { el.textContent = ""; return; }
+    el.replaceChildren();
+    if (r.error) return;
     const others = rows.filter((x) => x.id !== editingId && x.month !== r.entry.month);
     const me = computeMonths([...others, r.entry]).find((x) => x.month === r.entry.month);
-    el.textContent =
-      `Cards ${fmt(me.cardTotal)} · Bank ${fmt(me.bankTotal)} · Saved ${fmt(me.savings)} · ` +
-      `Expense ${fmt(me.expense)} · Net worth ${fmt(me.netWorth)}`;
+    const cells = [
+      ["Cards", fmt0(me.cardTotal), ""],
+      ["Bank", fmt0(me.bankTotal), ""],
+      ["Saved", fmt0(me.savings), toneOf(me.savings)],
+      ["Expense", fmt0(me.expense), ""],
+      ["Net worth", fmt0(me.netWorth), ""],
+    ];
+    for (const [k, v, cls] of cells) {
+      const d = document.createElement("div");
+      const dt = document.createElement("dt");
+      dt.textContent = k;
+      const dd = document.createElement("dd");
+      dd.textContent = v;
+      if (cls) dd.className = cls;
+      d.append(dt, dd);
+      el.appendChild(d);
+    }
   }
   $("entry-form").addEventListener("input", updatePreview);
 
@@ -967,6 +1374,7 @@
     }
     rows = rows.filter((x) => x.id !== data.id).concat(data);
     saveCache();
+    animateNext = true;
     render();
     dialog.close();
     refresh();

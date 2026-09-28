@@ -4,38 +4,75 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Finance Tracker</title>
-  <meta name="theme-color" content="#f4f5f7">
+  <meta name="theme-color" content="#0a0a0a">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Finances">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon.svg">
   <script>
-    // Apply the saved light/dark choice before first paint (no flash).
-    try { var t = localStorage.getItem("ft-theme"); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+    // Dark is the default; apply a saved light/dark choice before first paint (no flash).
+    try {
+      var t = localStorage.getItem("ft-theme");
+      if (t === "light") {
+        document.documentElement.dataset.theme = "light";
+        document.querySelector('meta[name="theme-color"]').content = "#f6f6f7";
+      }
+    } catch (e) {}
   </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Lucide-style line icons, used as <svg class="i"><use href="#i-name"/></svg> -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-overview" viewBox="0 0 24 24"><rect width="7" height="9" x="3" y="3" rx="1.5"/><rect width="7" height="5" x="14" y="3" rx="1.5"/><rect width="7" height="9" x="14" y="12" rx="1.5"/><rect width="7" height="5" x="3" y="16" rx="1.5"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/></symbol>
+    <symbol id="i-card" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="5" rx="2"/><path d="M2 10h20"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="M22 7 13.5 15.5 8.5 10.5 2 17"/><path d="M16 7h6v6"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+    <symbol id="i-mail" viewBox="0 0 24 24"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+    <symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 19V13M10 19V9M16 19V5M20 19H2"/></symbol>
+  </svg>
+
   <!-- Shown when config.js still has placeholder values -->
-  <main id="setup-view" class="narrow" hidden>
-    <h1>Almost there</h1>
-    <p>Open <code>config.js</code> and paste your Supabase URL and anon key. See <code>README.md</code> for the full setup steps.</p>
+  <main id="setup-view" class="auth-wrap" hidden>
+    <div class="auth-card">
+      <div class="logo-mark"><svg class="i"><use href="#i-logo"/></svg></div>
+      <h1>Almost there</h1>
+      <p class="muted">Open <code>config.js</code> and paste your Supabase URL and anon key. See <code>README.md</code> for the full setup steps.</p>
+    </div>
   </main>
 
   <!-- Login -->
-  <main id="login-view" class="narrow" hidden>
-    <div class="brand"><img src="icon.svg" alt="" width="40" height="40"><h1>Finance Tracker</h1></div>
-    <form id="login-form" class="card" novalidate>
-      <label>Email
+  <main id="login-view" class="auth-wrap" hidden>
+    <form id="login-form" class="auth-card" novalidate>
+      <div class="logo-mark"><svg class="i"><use href="#i-logo"/></svg></div>
+      <h1 id="login-greeting">Welcome back</h1>
+      <p class="muted">Sign in to see where you stand this month.</p>
+      <label class="field">Email
         <input type="email" id="login-email" autocomplete="username" required>
       </label>
-      <label>Password
+      <label class="field">Password
         <input type="password" id="login-password" autocomplete="current-password">
       </label>
       <button type="submit" class="btn primary block">Sign in</button>
-      <button type="button" id="magic-link-btn" class="btn ghost block">Email me a magic link instead</button>
+      <div class="divider"><span>or</span></div>
+      <button type="button" id="magic-link-btn" class="btn ghost block"><svg class="i"><use href="#i-mail"/></svg>Email me a magic link</button>
       <p id="login-msg" class="msg" role="status"></p>
     </form>
   </main>
@@ -43,78 +80,114 @@
   <!-- App -->
   <div id="app-view" hidden>
     <header class="topbar">
-      <div class="topbar-title">
-        <h1>Finances</h1>
-        <p id="sync-status" class="muted tiny" role="status"></p>
+      <div class="greet">
+        <h1 id="greeting">Good evening</h1>
+        <p class="greet-sub"><span id="today"></span><span class="sync"><span class="sync-dot" id="sync-dot"></span><span id="sync-status" role="status"></span></span></p>
       </div>
       <div class="topbar-actions">
-        <button id="theme-btn" class="btn icon ghost" aria-label="Toggle dark mode" title="Toggle dark mode"></button>
-        <button id="add-btn" class="btn primary">+ Month</button>
-        <button id="signout-btn" class="btn icon ghost" aria-label="Sign out" title="Sign out">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 17v-3H3v-4h7V7l5 5zm2-15h8a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2h-8v-2h8V4h-8z"/></svg>
-        </button>
+        <button id="theme-btn" class="btn icon ghost" aria-label="Switch to light mode" title="Switch theme"><svg class="i"><use href="#i-sun"/></svg></button>
+        <button id="signout-btn" class="btn icon ghost" aria-label="Sign out" title="Sign out"><svg class="i"><use href="#i-logout"/></svg></button>
+        <button id="add-btn" class="btn primary"><svg class="i"><use href="#i-plus"/></svg><span>Add month</span></button>
       </div>
     </header>
 
     <nav class="tabs" id="tabs" aria-label="Sections">
-        <button class="tab" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4zm0 7h6v-5H4zm10 0h6v-9h-6zm0-16v5h6V4z"/></svg><span>Overview</span></button>
-        <button class="tab" data-tab="investable"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8v2h20V8zM4 12v6h3v-6zm6.5 0v6h3v-6zM17 12v6h3v-6zM2 20v2h20v-2z"/></svg><span>Investable</span></button>
-        <button class="tab" data-tab="cards"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm0 14H4v-6h16zm0-10H4V6h16z"/></svg><span>Cards</span></button>
-        <button class="tab" data-tab="trends"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3.5 18.5 6-6 4 4L22 7.9 20.6 6.5l-7.1 8-4-4L2 18z"/></svg><span>Trends</span></button>
-      </nav>
+      <button class="tab" data-tab="overview"><svg class="i"><use href="#i-overview"/></svg><span>Overview</span></button>
+      <button class="tab" data-tab="investable"><svg class="i"><use href="#i-wallet"/></svg><span>Investable</span></button>
+      <button class="tab" data-tab="cards"><svg class="i"><use href="#i-card"/></svg><span>Cards</span></button>
+      <button class="tab" data-tab="trends"><svg class="i"><use href="#i-trend"/></svg><span>Trends</span></button>
+    </nav>
 
     <main class="content">
-      <section id="empty-state" class="card" hidden>
+      <!-- Loading skeleton (first load with no cached data) -->
+      <section id="loading-state" hidden aria-label="Loading">
+        <div class="card hero"><div class="sk sk-line w30"></div><div class="sk sk-hero"></div><div class="sk sk-chart"></div></div>
+        <div class="strip"><div class="sk sk-strip"></div><div class="sk sk-strip"></div><div class="sk sk-strip"></div></div>
+        <div class="card"><div class="sk sk-line w40"></div><div class="sk sk-chart"></div></div>
+      </section>
+
+      <section id="empty-state" class="card empty" hidden>
+        <div class="logo-mark"><svg class="i"><use href="#i-logo"/></svg></div>
         <h2>No months yet</h2>
-        <p>Tap <strong>+ Month</strong> to enter your first set of balances. Savings and expense need two months to calculate, so they show “n/a” until you add a second.</p>
-        <p class="muted">Tip: add the last 2–3 months from your statements now. The charts and the emergency-fund suggestion become useful right away.</p>
+        <p class="muted">Tap <strong>Add month</strong> to enter your first balances. Savings and expense need two months to calculate, so they show “n/a” until you add a second.</p>
+        <p class="caption">Tip: add the last 2–3 months from your statements now, so the charts and emergency-fund suggestion are useful right away.</p>
       </section>
 
       <!-- ============ OVERVIEW ============ -->
       <section class="tab-panel" data-panel="overview" hidden>
-        <div class="card hero">
-          <span class="eyebrow" id="ov-month"></span>
-          <span class="hero-label">Net worth</span>
-          <span class="hero-value" id="ov-networth"></span>
-          <span class="hero-sub" id="ov-networth-sub"></span>
-        </div>
-
-        <div class="stats">
-          <div class="stat"><span class="stat-label">Income</span><span class="stat-value" id="ov-income"></span><span class="stat-sub" id="ov-income-sub"></span></div>
-          <div class="stat"><span class="stat-label">Expense</span><span class="stat-value" id="ov-expense"></span><span class="stat-sub" id="ov-expense-sub"></span></div>
-          <div class="stat"><span class="stat-label">Saved</span><span class="stat-value" id="ov-savings"></span><span class="stat-sub" id="ov-savings-sub"></span></div>
-          <div class="stat"><span class="stat-label">Savings rate</span><span class="stat-value" id="ov-rate"></span><span class="stat-sub" id="ov-rate-sub"></span></div>
-        </div>
-
-        <div class="card">
-          <h3>Income vs expense</h3>
-          <div class="chart-box"><canvas id="chart-flow" role="img" aria-label="Income and expense by month"></canvas></div>
-        </div>
-
-        <h2 class="section-title">All time</h2>
-        <div class="stats">
-          <div class="stat"><span class="stat-label">Total income</span><span class="stat-value" id="t-income"></span></div>
-          <div class="stat"><span class="stat-label">Total expense</span><span class="stat-value" id="t-expense"></span></div>
-          <div class="stat"><span class="stat-label">Total saved</span><span class="stat-value" id="t-saved"></span></div>
-          <div class="stat"><span class="stat-label">Avg monthly expense</span><span class="stat-value" id="t-avg"></span></div>
-        </div>
-        <p class="muted tiny note" id="totals-note"></p>
-
-        <div class="card">
-          <div class="card-head">
-            <h3>All months</h3>
-            <button id="export-btn" class="btn ghost sm">Export CSV</button>
+        <div class="card hero clickable" data-goto="trends">
+          <div class="hero-top">
+            <span class="label">Net worth</span>
+            <span class="badge" id="ov-networth-badge"></span>
           </div>
-          <div class="table-wrap">
-            <table id="months-table">
-              <thead>
-                <tr>
-                  <th>Month</th><th>Income</th><th>Cards</th><th>Bank</th><th>Wealthsimple</th>
-                  <th>Expense</th><th>Saved</th><th>Net worth</th><th><span class="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <span class="hero-value num" id="ov-networth"></span>
+          <span class="caption" id="ov-networth-sub"></span>
+          <div class="hero-chart"><canvas id="chart-hero-worth" role="img" aria-label="Net worth by month"></canvas></div>
+        </div>
+
+        <div class="strip" id="ov-strip">
+          <div class="strip-item clickable" data-goto="trends">
+            <span class="label">Income</span>
+            <span class="strip-value num" id="ov-income"></span>
+            <span class="strip-foot"><span class="badge" id="ov-income-badge"></span><span class="spark" id="ov-income-spark"></span></span>
+          </div>
+          <div class="strip-item clickable" data-goto="trends">
+            <span class="label">Expense</span>
+            <span class="strip-value num" id="ov-expense"></span>
+            <span class="strip-foot"><span class="badge" id="ov-expense-badge"></span><span class="spark" id="ov-expense-spark"></span></span>
+          </div>
+          <div class="strip-item clickable" data-goto="trends">
+            <span class="label">Savings rate</span>
+            <span class="strip-value num" id="ov-rate"></span>
+            <span class="strip-foot"><span class="badge" id="ov-rate-badge"></span><span class="spark" id="ov-rate-spark"></span></span>
+          </div>
+        </div>
+
+        <div class="feed">
+          <div class="card span-2">
+            <div class="card-head">
+              <div><h3>Income vs expense</h3><p class="caption">Dotted line: your average monthly expense</p></div>
+              <div class="legend"><span class="key income">Income</span><span class="key expense">Expense</span></div>
+            </div>
+            <div class="chart-box"><canvas id="chart-flow" role="img" aria-label="Income and expense by month"></canvas></div>
+          </div>
+
+          <div class="card stat-card">
+            <div class="card-head"><span class="label">Saved this month</span><span class="badge" id="ov-savings-badge"></span></div>
+            <div class="stat-row">
+              <span class="kpi num" id="ov-savings"></span>
+              <span class="spark lg" id="ov-savings-spark"></span>
+            </div>
+            <span class="caption" id="ov-savings-sub"></span>
+          </div>
+
+          <div class="card">
+            <div class="card-head"><span class="label">All time</span></div>
+            <dl class="rows">
+              <div><dt>Total income</dt><dd class="num" id="t-income"></dd></div>
+              <div><dt>Total expense</dt><dd class="num" id="t-expense"></dd></div>
+              <div><dt>Total saved</dt><dd class="num" id="t-saved"></dd></div>
+              <div><dt>Avg monthly expense</dt><dd class="num" id="t-avg"></dd></div>
+            </dl>
+            <p class="caption" id="totals-note"></p>
+          </div>
+
+          <div class="card span-2 flush">
+            <div class="card-head padded">
+              <h3>All months</h3>
+              <button id="export-btn" class="btn ghost sm"><svg class="i"><use href="#i-download"/></svg>Export CSV</button>
+            </div>
+            <div class="table-wrap">
+              <table id="months-table">
+                <thead>
+                  <tr>
+                    <th>Month</th><th>Income</th><th>Cards</th><th>Bank</th><th>Wealthsimple</th>
+                    <th>Expense</th><th>Saved</th><th>Net worth</th><th><span class="sr-only">Actions</span></th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
@@ -122,100 +195,149 @@
       <!-- ============ INVESTABLE ============ -->
       <section class="tab-panel" data-panel="investable" hidden>
         <div class="card hero">
-          <span class="eyebrow" id="inv-month"></span>
-          <span class="hero-label">Investable cash</span>
-          <span class="hero-value" id="inv-hero"></span>
-          <span class="hero-sub" id="inv-hero-sub"></span>
+          <div class="hero-top">
+            <span class="label">Investable cash</span>
+            <span class="badge" id="inv-hero-badge"></span>
+          </div>
+          <span class="hero-value num" id="inv-hero"></span>
+          <span class="caption" id="inv-hero-sub"></span>
+          <div class="alloc" id="inv-alloc" aria-hidden="true"></div>
+          <div class="alloc-legend" id="inv-alloc-legend"></div>
         </div>
 
-        <div class="stats">
-          <div class="stat"><span class="stat-label">Total cash</span><span class="stat-value" id="inv-cash"></span><span class="stat-sub">Sum of bank accounts</span></div>
-          <div class="stat"><span class="stat-label">Runway</span><span class="stat-value" id="inv-runway"></span><span class="stat-sub" id="inv-runway-sub"></span></div>
+        <div class="strip">
+          <div class="strip-item">
+            <span class="label">Total cash</span>
+            <span class="strip-value num" id="inv-cash"></span>
+            <span class="strip-foot"><span class="badge" id="inv-cash-badge"></span><span class="spark" id="inv-cash-spark"></span></span>
+          </div>
+          <div class="strip-item">
+            <span class="label">Runway</span>
+            <span class="strip-value num" id="inv-runway"></span>
+            <span class="strip-foot caption" id="inv-runway-sub"></span>
+          </div>
+          <div class="strip-item">
+            <span class="label">Emergency</span>
+            <span class="strip-value num" id="inv-ef-pct"></span>
+            <span class="strip-foot caption">funded</span>
+          </div>
         </div>
 
-        <div class="card">
-          <h3>Where your cash goes</h3>
-          <div class="chart-box short"><canvas id="chart-waterfall" role="img" aria-label="Cash breakdown: total, set-asides, investable"></canvas></div>
-          <label class="check"><input type="checkbox" id="reserve-cards"> Also set aside my credit card balances <span class="muted" id="reserve-cards-amt"></span></label>
-        </div>
+        <div class="feed">
+          <div class="card span-2">
+            <div class="card-head"><div><h3>Where your cash goes</h3><p class="caption">Latest month’s bank balances, after each set-aside</p></div></div>
+            <div class="chart-box short"><canvas id="chart-waterfall" role="img" aria-label="Cash breakdown: total, set-asides, investable"></canvas></div>
+            <label class="toggle">
+              <input type="checkbox" id="reserve-cards">
+              <span class="toggle-track" aria-hidden="true"></span>
+              <span>Also set aside card balances <span class="num muted" id="reserve-cards-amt"></span></span>
+            </label>
+          </div>
 
-        <div class="card">
-          <div class="card-head">
-            <h3>Emergency fund</h3>
-            <span class="pill" id="ef-source"></span>
+          <div class="card">
+            <div class="card-head">
+              <div class="title-icon"><svg class="i"><use href="#i-shield"/></svg><h3>Emergency fund</h3></div>
+              <span class="chip" id="ef-source"></span>
+            </div>
+            <div class="progress-head">
+              <span class="kpi-sm num" id="ef-funded"></span>
+              <span class="caption num" id="ef-target"></span>
+            </div>
+            <div class="progress"><div class="progress-fill" id="ef-bar"></div></div>
+            <p class="caption" id="ef-note"></p>
+            <div class="segmented" id="ef-mode" role="radiogroup" aria-label="Emergency fund target">
+              <button role="radio" data-mode="auto" data-mult="3">3 months</button>
+              <button role="radio" data-mode="auto" data-mult="6">6 months</button>
+              <button role="radio" data-mode="fixed">Fixed</button>
+            </div>
+            <form id="ef-fixed-form" class="inline-form" hidden novalidate>
+              <div class="money-field"><span>$</span><input type="text" inputmode="decimal" id="ef-fixed" class="money" placeholder="15,000" autocomplete="off" aria-label="Fixed emergency fund target"></div>
+              <button class="btn primary" type="submit">Save</button>
+            </form>
+            <p class="msg" id="ef-msg" role="alert"></p>
           </div>
-          <div class="progress-row">
-            <span id="ef-funded"></span>
-            <span class="muted" id="ef-target"></span>
-          </div>
-          <div class="progress"><div class="progress-fill" id="ef-bar"></div></div>
-          <p class="muted tiny" id="ef-note"></p>
 
-          <div class="segmented" id="ef-mode" role="radiogroup" aria-label="Emergency fund target">
-            <button role="radio" data-mode="auto" data-mult="3">3 months</button>
-            <button role="radio" data-mode="auto" data-mult="6">6 months</button>
-            <button role="radio" data-mode="fixed">Fixed amount</button>
+          <div class="card">
+            <div class="card-head">
+              <div class="title-icon"><svg class="i"><use href="#i-target"/></svg><h3>Buckets</h3></div>
+              <span class="caption num" id="bucket-total"></span>
+            </div>
+            <p class="caption">Labels on your cash, not separate accounts. Funded by deadline, after the emergency fund.</p>
+            <ul class="item-list" id="bucket-list"></ul>
+            <form id="bucket-form" class="bucket-form" novalidate>
+              <input type="text" id="b-name" placeholder="Name, e.g. Montreal trip" autocomplete="off" aria-label="Bucket name">
+              <div class="money-field"><span>$</span><input type="text" id="b-target" inputmode="decimal" class="money" placeholder="Target" autocomplete="off" aria-label="Target amount"></div>
+              <input type="month" id="b-deadline" aria-label="Deadline (optional)" title="Deadline (optional)">
+              <button class="btn primary" type="submit" id="b-save">Add</button>
+            </form>
+            <button type="button" class="btn ghost sm" id="b-cancel" hidden>Cancel edit</button>
+            <p class="msg" id="bucket-msg" role="alert"></p>
           </div>
-          <form id="ef-fixed-form" class="inline-form" hidden novalidate>
-            <input type="text" inputmode="decimal" id="ef-fixed" class="money" placeholder="Target, e.g. 15,000" autocomplete="off" aria-label="Fixed emergency fund target">
-            <button class="btn primary sm" type="submit">Save</button>
-          </form>
-          <p class="msg" id="ef-msg" role="alert"></p>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h3>Earmarked buckets</h3>
-            <span class="muted tiny" id="bucket-total"></span>
-          </div>
-          <p class="muted tiny">Labels on your cash, not separate accounts. Funded in order of deadline, after the emergency fund.</p>
-          <ul class="bucket-list" id="bucket-list"></ul>
-          <form id="bucket-form" class="bucket-form" novalidate>
-            <input type="text" id="b-name" placeholder="Name, e.g. Montreal trip" autocomplete="off" aria-label="Bucket name">
-            <input type="text" id="b-target" inputmode="decimal" class="money" placeholder="Target $" autocomplete="off" aria-label="Target amount">
-            <input type="month" id="b-deadline" aria-label="Deadline (optional)" title="Deadline (optional)">
-            <button class="btn primary" type="submit" id="b-save">Add</button>
-          </form>
-          <button type="button" class="btn ghost sm" id="b-cancel" hidden>Cancel edit</button>
-          <p class="msg" id="bucket-msg" role="alert"></p>
         </div>
       </section>
 
       <!-- ============ CARDS ============ -->
       <section class="tab-panel" data-panel="cards" hidden>
-        <div class="stats">
-          <div class="stat"><span class="stat-label">Total card debt</span><span class="stat-value" id="cd-total"></span><span class="stat-sub" id="cd-total-sub"></span></div>
-          <div class="stat"><span class="stat-label">Utilization</span><span class="stat-value" id="cd-util"></span><span class="stat-sub" id="cd-util-sub"></span></div>
+        <div class="card hero">
+          <div class="hero-top">
+            <span class="label">Total card debt</span>
+            <span class="badge" id="cd-total-badge"></span>
+          </div>
+          <span class="hero-value num" id="cd-total"></span>
+          <span class="caption" id="cd-total-sub"></span>
+          <div class="hero-chart tall"><canvas id="chart-cards" role="img" aria-label="Credit card balances by month, stacked"></canvas></div>
+          <div class="alloc-legend" id="cd-legend"></div>
+        </div>
+
+        <div class="strip">
+          <div class="strip-item">
+            <span class="label">Utilization</span>
+            <span class="strip-value num" id="cd-util"></span>
+            <span class="strip-foot caption" id="cd-util-sub"></span>
+          </div>
+          <div class="strip-item">
+            <span class="label">Largest</span>
+            <span class="strip-value num" id="cd-top"></span>
+            <span class="strip-foot caption" id="cd-top-sub"></span>
+          </div>
+          <div class="strip-item">
+            <span class="label">Cards</span>
+            <span class="strip-value num" id="cd-count"></span>
+            <span class="strip-foot caption" id="cd-month"></span>
+          </div>
         </div>
 
         <div class="card">
-          <h3>Balance by card</h3>
-          <div class="chart-box"><canvas id="chart-cards" role="img" aria-label="Credit card balances by month"></canvas></div>
-        </div>
-
-        <div class="card">
-          <h3>Cards <span class="muted tiny">· <span id="cd-month"></span></span></h3>
-          <p class="muted tiny">Add a credit limit to see utilization. Leave blank to skip.</p>
-          <ul class="card-list" id="card-list"></ul>
+          <div class="card-head"><div><h3>By card</h3><p class="caption">Add a credit limit to see utilization. Leave blank to skip.</p></div></div>
+          <ul class="item-list" id="card-list"></ul>
         </div>
       </section>
 
       <!-- ============ TRENDS ============ -->
       <section class="tab-panel" data-panel="trends" hidden>
-        <div class="card">
-          <h3>Net worth</h3>
-          <p class="muted tiny">Bank + Wealthsimple − cards</p>
-          <div class="chart-box"><canvas id="chart-worth" role="img" aria-label="Net worth and Wealthsimple by month"></canvas></div>
+        <div class="card hero">
+          <div class="hero-top">
+            <span class="label" id="tr-label">Net worth growth</span>
+            <span class="badge" id="tr-badge"></span>
+          </div>
+          <span class="hero-value num" id="tr-change"></span>
+          <span class="caption" id="tr-sub"></span>
+          <div class="hero-chart tall"><canvas id="chart-worth" role="img" aria-label="Net worth by month"></canvas></div>
         </div>
-        <div class="card">
-          <h3>Savings rate</h3>
-          <p class="muted tiny">Saved ÷ income, each month</p>
-          <div class="chart-box short"><canvas id="chart-rate" role="img" aria-label="Savings rate by month"></canvas></div>
-        </div>
-        <div class="card">
-          <h3>Expense &amp; 3-month average</h3>
-          <p class="muted tiny" id="avg3-note">The average smooths out one-off months. It needs 3 months of expense in a row.</p>
-          <div class="chart-box"><canvas id="chart-avg" role="img" aria-label="Monthly expense and 3-month rolling average"></canvas></div>
+
+        <div class="feed">
+          <div class="card">
+            <div class="card-head"><div><h3>Savings rate</h3><p class="caption">Saved ÷ income · dotted: your average</p></div></div>
+            <div class="chart-box short"><canvas id="chart-rate" role="img" aria-label="Savings rate by month"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><div><h3>Spending</h3><p class="caption" id="avg3-note">Dotted: 3-month average</p></div></div>
+            <div class="chart-box short"><canvas id="chart-spend" role="img" aria-label="Monthly expense and 3-month rolling average"></canvas></div>
+          </div>
+          <div class="card span-2">
+            <div class="card-head"><div><h3>Wealthsimple</h3><p class="caption">Shown separately — market moves never touch your expense math</p></div></div>
+            <div class="chart-box short"><canvas id="chart-ws" role="img" aria-label="Wealthsimple balance by month"></canvas></div>
+          </div>
         </div>
       </section>
     </main>
@@ -225,41 +347,43 @@
   <dialog id="entry-dialog">
     <form id="entry-form" novalidate>
       <header class="dialog-head">
-        <h2 id="entry-title">Add month</h2>
-        <button type="button" class="btn icon ghost" id="entry-close" aria-label="Close">✕</button>
+        <div><p class="caption" id="entry-kicker">Monthly check-in</p><h2 id="entry-title">Add month</h2></div>
+        <button type="button" class="btn icon ghost" id="entry-close" aria-label="Close"><svg class="i"><use href="#i-x"/></svg></button>
       </header>
 
       <div class="dialog-body">
-        <label>Month
-          <input type="month" id="f-month" required pattern="\d{4}-\d{2}" placeholder="2026-09">
-        </label>
-        <label>Income received this month <span class="muted tiny">(needed for expense)</span>
-          <input type="text" inputmode="decimal" id="f-income" class="money" placeholder="0.00" autocomplete="off">
-        </label>
+        <div class="form-grid">
+          <label class="field">Month
+            <input type="month" id="f-month" required pattern="\d{4}-\d{2}" placeholder="2026-09">
+          </label>
+          <label class="field">Income received <span class="faint">· for expense</span>
+            <span class="money-field"><span>$</span><input type="text" inputmode="decimal" id="f-income" class="money" placeholder="0.00" autocomplete="off"></span>
+          </label>
+        </div>
 
         <fieldset>
-          <legend>Credit card balances</legend>
+          <legend>Credit cards</legend>
           <div id="f-cards" class="acct-list"></div>
-          <button type="button" class="btn ghost sm" data-add="cards">+ Add card</button>
+          <button type="button" class="btn ghost sm" data-add="cards"><svg class="i"><use href="#i-plus"/></svg>Add card</button>
         </fieldset>
 
         <fieldset>
-          <legend>Bank (chequing) balances</legend>
+          <legend>Bank accounts</legend>
           <div id="f-banks" class="acct-list"></div>
-          <button type="button" class="btn ghost sm" data-add="banks">+ Add account</button>
+          <button type="button" class="btn ghost sm" data-add="banks"><svg class="i"><use href="#i-plus"/></svg>Add account</button>
         </fieldset>
 
-        <label>Wealthsimple balance <span class="muted tiny">(not used in expense math)</span>
-          <input type="text" inputmode="decimal" id="f-ws" class="money" placeholder="0.00" autocomplete="off">
+        <label class="field">Wealthsimple <span class="faint">· not used in expense math</span>
+          <span class="money-field"><span>$</span><input type="text" inputmode="decimal" id="f-ws" class="money" placeholder="0.00" autocomplete="off"></span>
         </label>
 
-        <p id="entry-preview" class="preview"></p>
+        <dl id="entry-preview" class="preview"></dl>
         <p id="entry-msg" class="msg" role="alert"></p>
       </div>
 
       <footer class="dialog-foot">
-        <button type="button" class="btn ghost" id="copy-last-btn">Copy last month</button>
-        <button type="submit" class="btn primary" id="entry-save">Save</button>
+        <button type="button" class="btn ghost" id="copy-last-btn"><svg class="i"><use href="#i-copy"/></svg>Copy last month</button>
+        <button type="submit" class="btn primary" id="entry-save">Save month</button>
       </footer>
     </form>
   </dialog>
@@ -267,8 +391,8 @@
   <template id="acct-row-tpl">
     <div class="acct-row">
       <input type="text" class="acct-name" placeholder="Name" aria-label="Account name" autocomplete="off">
-      <input type="text" class="acct-bal money" inputmode="decimal" placeholder="0.00" aria-label="Balance" autocomplete="off">
-      <button type="button" class="btn icon ghost acct-remove" aria-label="Remove">✕</button>
+      <span class="money-field"><span>$</span><input type="text" class="acct-bal money" inputmode="decimal" placeholder="0.00" aria-label="Balance" autocomplete="off"></span>
+      <button type="button" class="btn icon ghost acct-remove" aria-label="Remove"><svg class="i"><use href="#i-x"/></svg></button>
     </div>
   </template>
 
