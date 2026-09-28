@@ -54,13 +54,13 @@ This creates one table, `months`, with Row Level Security turned on. Only your s
 1. Commit and push `config.js` to this repo on the `main` branch (merge this branch into `main` first).
 2. On GitHub, go to the repo → **Settings** → **Pages**.
 3. Under **Build and deployment**, set Source to **Deploy from a branch**, Branch to **`main`** and folder to **`/ (root)`**, then click **Save**.
-4. After about a minute your site is live at `https://jesteroftheroad.github.io/finance-tracker/`. The exact URL is shown at the top of the Pages settings.
+4. After about a minute your site is live at `https://jesteroftheroad.github.io/Finance-tracker/`. The exact URL is shown at the top of the Pages settings.
 
 > GitHub Pages sites on a free account need a **public** repo. If you'd rather keep the repo private, use **Netlify** instead: sign in at <https://app.netlify.com> → **Add new site** → **Import an existing project** → pick this repo → leave the build command empty and set the publish directory to `/` → **Deploy**. Or drag the project folder onto <https://app.netlify.com/drop>.
 
 ### 6. Tell Supabase where the site lives (for magic links)
 1. Go to **Authentication** → **URL Configuration**.
-2. Set **Site URL** to your live URL, e.g. `https://jesteroftheroad.github.io/finance-tracker/`.
+2. Set **Site URL** to your live URL, e.g. `https://jesteroftheroad.github.io/Finance-tracker/`.
 3. Add the same URL under **Redirect URLs**.
 
 Password login works without this step. Magic links need it.
