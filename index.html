@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Finance Tracker</title>
+  <meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111418" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Finances">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon.svg">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Shown when config.js still has placeholder values -->
+  <main id="setup-view" class="narrow" hidden>
+    <h1>Almost there</h1>
+    <p>Open <code>config.js</code> and paste your Supabase URL and anon key. See <code>README.md</code> for the full setup steps.</p>
+  </main>
+
+  <!-- Login -->
+  <main id="login-view" class="narrow" hidden>
+    <h1>Finance Tracker</h1>
+    <form id="login-form" class="panel" novalidate>
+      <label>Email
+        <input type="email" id="login-email" autocomplete="username" required>
+      </label>
+      <label>Password
+        <input type="password" id="login-password" autocomplete="current-password">
+      </label>
+      <button type="submit" class="primary">Sign in</button>
+      <button type="button" id="magic-link-btn" class="ghost">Email me a magic link instead</button>
+      <p id="login-msg" class="msg" role="status"></p>
+    </form>
+  </main>
+
+  <!-- Dashboard -->
+  <div id="app-view" hidden>
+    <header class="topbar">
+      <div>
+        <h1>Finances</h1>
+        <p id="sync-status" class="muted small" role="status"></p>
+      </div>
+      <div class="topbar-actions">
+        <button id="add-btn" class="primary">+ Month</button>
+        <button id="signout-btn" class="ghost small-btn" title="Sign out">Sign out</button>
+      </div>
+    </header>
+
+    <main class="content">
+      <section id="empty-state" class="panel" hidden>
+        <h2>No months yet</h2>
+        <p>Tap <strong>+ Month</strong> to enter your first set of balances. Expense needs two months to calculate, so it’ll show “n/a” until you add a second.</p>
+      </section>
+
+      <section id="dashboard" hidden>
+        <h2 class="section-title">Month of <span id="summary-month"></span></h2>
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Income</span><span class="stat-value" id="s-income"></span><span class="stat-sub" id="s-income-sub"></span></div>
+          <div class="stat"><span class="stat-label">Expense</span><span class="stat-value" id="s-expense"></span><span class="stat-sub" id="s-expense-sub"></span></div>
+          <div class="stat"><span class="stat-label">Savings</span><span class="stat-value" id="s-savings"></span><span class="stat-sub" id="s-savings-sub"></span></div>
+          <div class="stat"><span class="stat-label">Net worth</span><span class="stat-value" id="s-networth"></span><span class="stat-sub" id="s-networth-sub"></span></div>
+        </div>
+
+        <h2 class="section-title">All time</h2>
+        <div class="stats">
+          <div class="stat"><span class="stat-label">Total income</span><span class="stat-value" id="t-income"></span></div>
+          <div class="stat"><span class="stat-label">Total expense</span><span class="stat-value" id="t-expense"></span></div>
+          <div class="stat"><span class="stat-label">Total saved</span><span class="stat-value" id="t-saved"></span></div>
+          <div class="stat"><span class="stat-label">Avg monthly expense</span><span class="stat-value" id="t-avg"></span></div>
+        </div>
+        <p class="muted small" id="totals-note"></p>
+
+        <div class="panel chart-panel">
+          <h3>Income vs expense</h3>
+          <div class="chart-box"><canvas id="chart-flow"></canvas></div>
+        </div>
+        <div class="panel chart-panel">
+          <h3>Credit card balances</h3>
+          <div class="chart-box"><canvas id="chart-cards"></canvas></div>
+        </div>
+        <div class="panel chart-panel">
+          <h3>Net worth &amp; Wealthsimple</h3>
+          <div class="chart-box"><canvas id="chart-worth"></canvas></div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h3>All months</h3>
+            <button id="export-btn" class="ghost small-btn">Export CSV</button>
+          </div>
+          <div class="table-wrap">
+            <table id="months-table">
+              <thead>
+                <tr>
+                  <th>Month</th><th>Income</th><th>Cards</th><th>Bank</th><th>Wealthsimple</th>
+                  <th>Expense</th><th>Savings</th><th>Net worth</th><th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Monthly entry form -->
+  <dialog id="entry-dialog">
+    <form id="entry-form" novalidate>
+      <header class="dialog-head">
+        <h2 id="entry-title">Add month</h2>
+        <button type="button" class="ghost icon-btn" id="entry-close" aria-label="Close">✕</button>
+      </header>
+
+      <div class="dialog-body">
+        <label>Month
+          <input type="month" id="f-month" required pattern="\d{4}-\d{2}" placeholder="2026-09">
+        </label>
+        <label>Income received this month
+          <input type="text" inputmode="decimal" id="f-income" class="money" placeholder="0.00" autocomplete="off">
+        </label>
+
+        <fieldset>
+          <legend>Credit card balances</legend>
+          <div id="f-cards" class="acct-list"></div>
+          <button type="button" class="ghost small-btn" data-add="cards">+ Add card</button>
+        </fieldset>
+
+        <fieldset>
+          <legend>Bank (chequing) balances</legend>
+          <div id="f-banks" class="acct-list"></div>
+          <button type="button" class="ghost small-btn" data-add="banks">+ Add account</button>
+        </fieldset>
+
+        <label>Wealthsimple balance <span class="muted small">(not used in expense math)</span>
+          <input type="text" inputmode="decimal" id="f-ws" class="money" placeholder="0.00" autocomplete="off">
+        </label>
+
+        <p id="entry-preview" class="preview muted small"></p>
+        <p id="entry-msg" class="msg" role="alert"></p>
+      </div>
+
+      <footer class="dialog-foot">
+        <button type="button" class="ghost" id="copy-last-btn">Copy last month’s balances</button>
+        <button type="submit" class="primary" id="entry-save">Save</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <template id="acct-row-tpl">
+    <div class="acct-row">
+      <input type="text" class="acct-name" placeholder="Name" aria-label="Account name" autocomplete="off">
+      <input type="text" class="acct-bal money" inputmode="decimal" placeholder="0.00" aria-label="Balance" autocomplete="off">
+      <button type="button" class="ghost icon-btn acct-remove" aria-label="Remove">✕</button>
+    </div>
+  </template>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+  <script src="config.js"></script>
+  <script src="calc.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
