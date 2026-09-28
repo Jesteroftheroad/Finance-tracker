@@ -2,7 +2,8 @@
 
 A small personal finance dashboard. Once a month you enter income, card balances, bank balances and your Wealthsimple balance. The app works out expense, savings and net worth for you. Data is stored in Supabase, so your phone, laptop and any other device all show the same numbers.
 
-- Plain HTML/CSS/JS with no build step. Files: `index.html`, `style.css`, `calc.js` (the math), `app.js` (UI + sync), `config.js` (your keys).
+- Plain HTML/CSS/JS with no build step. Files: `index.html`, `style.css`, `calc.js` (the math), `app.js` (UI + sync), `config.js` (your keys). Charts use Chart.js from a CDN.
+- Four tabs: **Overview** (this month, all-time totals, every month), **Investable** (what cash you can actually deploy), **Cards** (per-card trends, limits, utilization), **Trends** (net worth, savings rate, 3-month average expense).
 - **Supabase** (free tier) holds the data and handles login. **GitHub Pages** (free) hosts the site.
 - Your browser keeps a copy of the last synced data in localStorage. If you're offline, you still see your numbers. Saving needs a connection so devices never drift apart.
 
@@ -12,13 +13,24 @@ A small personal finance dashboard. Once a month you enter income, card balances
 |---|---|
 | Total cards | sum of card balances |
 | Total bank | sum of bank balances |
-| Expense | `income − ((bank − cards) − (last month's bank − last month's cards))` |
-| Savings | `income − expense` (= how much bank-minus-cards grew) |
+| Saved | `(bank − cards) − (last month's bank − last month's cards)` |
+| Expense | `income − saved` |
+| Savings rate | `saved ÷ income` |
 | Net worth | `bank + Wealthsimple − cards` |
 
 Wealthsimple is **never** part of expense or savings, so market swings can't change your spending number. It only appears in net worth and in its own trend line.
 
 - The first month shows **n/a** for expense and savings, because there's no previous month to compare with.
+- Income is optional. Without it, *saved* and net worth still work, but expense and savings rate show n/a for that month.
+
+**Investable tab**
+
+| | Formula |
+|---|---|
+| Total cash | sum of bank accounts (latest month) |
+| Emergency fund | 3× or 6× average monthly expense (auto, needs 2 months of expense), or a fixed amount you type |
+| Investable | `cash − emergency fund − bucket targets` (optionally also − card balances) |
+| Runway | `cash ÷ (average monthly expense ÷ 30.44)` days |
 - If you skip a month (e.g. July then September), September's expense covers both months. The table flags it with “after 1-month gap”.
 
 ---
@@ -34,6 +46,9 @@ Wealthsimple is **never** part of expense or savings, so market swings can't cha
 2. Paste the whole contents of [`schema.sql`](schema.sql) and click **Run**. You should see “Success. No rows returned”.
 
 This creates one table, `months`, with Row Level Security turned on. Only your signed-in account can read or change its rows.
+
+### 2b. Upgrading an existing setup
+If you created the table before the Investable/Cards update, run [`migrations/002_investable_cards.sql`](migrations/002_investable_cards.sql) once in the SQL Editor. It adds the `settings` and `buckets` tables and makes income optional. It doesn't touch your saved months, and running it twice is harmless.
 
 ### 3. Create your login (one account, just you)
 1. Go to **Authentication** → **Users** → **Add user** → **Create new user**.

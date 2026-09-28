@@ -1,28 +1,11 @@
--- Finance Tracker: full database setup for a NEW Supabase project.
--- Paste this whole file into Supabase → SQL Editor → New query → Run.
--- (Already set up with the original schema? Run migrations/002_investable_cards.sql instead.)
+-- Migration 002: Investable + Cards tabs.
+-- Safe to run on your existing project: it never deletes or rewrites your months.
+-- Safe to run more than once.
+-- Supabase → SQL Editor → New query → paste this whole file → Run.
 
-create table if not exists public.months (
-  id           uuid primary key default gen_random_uuid(),
-  user_id      uuid not null default auth.uid() references auth.users (id) on delete cascade,
-  month        text not null check (month ~ '^\d{4}-(0[1-9]|1[0-2])$'),   -- e.g. 2026-09
-  income       numeric(12,2) check (income >= 0),   -- optional; needed for expense
-  cards        jsonb not null default '[]'::jsonb,   -- [{"name":"Amex","balance":1234.56}, ...]
-  banks        jsonb not null default '[]'::jsonb,   -- [{"name":"EQ","balance":5000}, ...]
-  wealthsimple numeric(12,2) not null default 0 check (wealthsimple >= 0),
-  updated_at   timestamptz not null default now(),
-  unique (user_id, month)
-);
-
--- Row Level Security: each signed-in user can only ever see / change their own rows.
-alter table public.months enable row level security;
-
-drop policy if exists "Own rows only" on public.months;
-create policy "Own rows only" on public.months
-  for all
-  to authenticated
-  using ((select auth.uid()) = user_id)
-  with check ((select auth.uid()) = user_id);
+-- 1. Income becomes optional (savings is still computed from balances;
+--    expense and savings rate need income, so they show "n/a" without it).
+alter table public.months alter column income drop not null;
 
 -- 2. One settings row per user: emergency fund + card limits.
 create table if not exists public.settings (
