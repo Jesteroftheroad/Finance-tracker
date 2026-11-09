@@ -1,6 +1,9 @@
-# Optional: pings Supabase twice a week so the free-tier project doesn't pause
-# from inactivity between your monthly entries. Needs two repo secrets:
-# SUPABASE_URL and SUPABASE_ANON_KEY (same values as config.js). Skips if missing.
+# Pings Supabase twice a week so the free-tier project doesn't pause from
+# inactivity between your monthly entries.
+# It reads the project URL and public (anon/publishable) key from config.js,
+# so no repo secrets are needed. If the ping fails, the job fails and GitHub
+# emails you — usually it means the project is paused: open the Supabase
+# dashboard and click "Restore project".
 name: Keep Supabase awake
 
 on:
@@ -12,13 +15,23 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: config.js
+          sparse-checkout-cone-mode: false
+
       - name: Ping Supabase REST API
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
-            echo "Secrets not set; skipping."; exit 0
+          url=$(sed -n 's/.*SUPABASE_URL: *"\([^"]*\)".*/\1/p' config.js)
+          key=$(sed -n 's/.*SUPABASE_ANON_KEY: *"\([^"]*\)".*/\1/p' config.js)
+          if [ -z "$url" ] || [ -z "$key" ] || [[ "$url" == *YOUR-PROJECT* ]]; then
+            echo "::error::Could not read SUPABASE_URL / SUPABASE_ANON_KEY from config.js"
+            exit 1
           fi
-          curl -fsS "$SUPABASE_URL/rest/v1/months?select=id&limit=1" \
-            -H "apikey: $SUPABASE_ANON_KEY" -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+          echo "Pinging $url"
+          if ! curl -fsS --max-time 30 "$url/rest/v1/months?select=id&limit=1" -H "apikey: $key"; then
+            echo "::error::Supabase did not respond. The project is probably paused: open the Supabase dashboard and click Restore project."
+            exit 1
+          fi
+          echo
+          echo "Supabase is awake."

@@ -103,6 +103,13 @@
   });
 
   // ---------- auth ----------
+  // "Failed to fetch" means Supabase couldn't be reached at all — usually a paused free project.
+  const friendly = (msg) =>
+    !navigator.onLine ? "You’re offline. Connect to the internet and try again."
+    : /failed to fetch|networkerror|load failed/i.test(msg || "")
+      ? "Can’t reach your database. Your free Supabase project is probably paused: open supabase.com, select the project and click Restore project, then try again."
+      : msg;
+
   function loginMsg(text, kind = "") {
     const el = $("login-msg");
     el.textContent = text;
@@ -116,7 +123,7 @@
     if (!email || !password) return loginMsg("Enter your email and password.", "error");
     loginMsg("Signing in…");
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) loginMsg(error.message, "error");
+    if (error) loginMsg(friendly(error.message), "error");
   });
 
   $("magic-link-btn").addEventListener("click", async () => {
@@ -127,7 +134,7 @@
       email,
       options: { shouldCreateUser: false, emailRedirectTo: location.origin + location.pathname },
     });
-    if (error) loginMsg(error.message, "error");
+    if (error) loginMsg(friendly(error.message), "error");
     else loginMsg("Check your email for the sign-in link.", "ok");
   });
 
@@ -189,7 +196,7 @@
     ]);
     refreshing = false;
     if (m.error) {
-      setStatus(navigator.onLine ? `Sync failed: ${m.error.message}` : "Offline · cached data", "err");
+      setStatus(!navigator.onLine ? "Offline · cached data" : /failed to fetch|networkerror|load failed/i.test(m.error.message) ? "Database unreachable (paused?) · cached data" : `Sync failed: ${m.error.message}`, "err");
       loaded = true;
       render();
       return;

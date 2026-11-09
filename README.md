@@ -96,13 +96,9 @@ It then opens full-screen like an app and stays signed in.
 - **Export CSV** downloads everything as a spreadsheet backup.
 
 ## Free-tier note (keep Supabase from pausing)
-Supabase pauses a free project after about a week with no activity. If you only open the dashboard once a month, it can go to sleep between entries. Your data is kept, and **Restore project** in the Supabase dashboard wakes it up.
+Supabase pauses a free project after about a week with no activity. Your data is kept, and **Restore project** in the Supabase dashboard wakes it up (possible for up to 90 days after it pauses). While it's paused, the app shows "Can't reach your database".
 
-To avoid this entirely, the included GitHub Action `.github/workflows/keep-supabase-awake.yml` pings the database twice a week. Turn it on by adding two secrets under repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**:
-- `SUPABASE_URL`: same as in `config.js`
-- `SUPABASE_ANON_KEY`: same as in `config.js`
-
-To test it, go to the **Actions** tab → *Keep Supabase awake* → **Run workflow**.
+The included GitHub Action `.github/workflows/keep-supabase-awake.yml` pings the database twice a week so this doesn't happen. It reads the URL and public key from `config.js`, so there's nothing to configure. If a ping fails, the job fails and GitHub emails you; restore the project when that happens. To test it, go to the **Actions** tab → *Keep Supabase awake* → **Run workflow**.
 
 ## Running locally
 Any static server works, for example `python3 -m http.server 8000`, then open <http://localhost:8000>. Add `http://localhost:8000` to Supabase's Redirect URLs if you want magic links to work locally.
